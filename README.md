@@ -57,7 +57,9 @@ kritva-forge/
 └── data/
 ```
 
-`data/` is reserved for the private `KritvaOS/kritva-forge-data` Git submodule.
+`data/` contains only public-repository documentation. Runtime RTL and
+generated artifacts are stored in the separate private
+`KritvaOS/kritva-forge-data` repository.
 
 ## Design Principles
 
@@ -102,3 +104,40 @@ Kritva Nexus and Kritva Edge are hardware platforms. Kritva Forge is a separate 
 ## License
 
 Apache License 2.0.
+
+
+## Public Code / Private Data
+
+Kritva Forge intentionally separates algorithms from RTL/data:
+
+```text
+kritva-forge/
+    parser / IR / semantic / structural / FSM / dataset code
+                 │
+                 ▼
+kritva-forge-data/
+    raw/rtl → normalized/ir → analysis/golden → datasets/generated
+```
+
+For the standard local layout:
+
+```bash
+cd ~/workarea/kritvaos/kritva-forge
+make setup
+make headers
+make test
+make pipeline
+```
+
+The pipeline reads `../kritva-forge-data/raw/rtl` and writes to the dedicated
+private-data directories. All paths can be overridden through Make variables.
+
+## Pipeline Outputs
+
+| Artifact | Default location |
+|---|---|
+| Raw RTL input | `kritva-forge-data/raw/rtl` |
+| Normalized module IR | `kritva-forge-data/normalized/ir` |
+| Generated prompts | `kritva-forge-data/generated/prompts` |
+| Pipeline reports | `kritva-forge-data/analysis/reports` |
+| Pipeline datasets | `kritva-forge-data/datasets/pipeline` |

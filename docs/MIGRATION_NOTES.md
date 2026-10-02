@@ -43,3 +43,19 @@ Project imports were converted to the new `scripts.*` package hierarchy so the r
 ## Known source gap inherited from the archive
 
 `semantic/type_enrichment.py` imports `scripts.semantic.type_info`, but `type_info.py` was not present in the supplied `bes_verilog_llm` archive. This has intentionally not been fabricated during migration. The module should be restored/implemented in a separate change before enabling the full semantic pipeline.
+
+
+## Private Data Repository Migration
+
+The current repository no longer treats `data/raw_rtl`, `data/curated`, or
+`out` as canonical runtime locations. Use `kritva-forge-data`:
+
+- `raw/rtl` — RTL input
+- `normalized/ir` — normalized/module YAML artifacts
+- `generated/prompts` — generated prompts
+- `analysis/reports` — pipeline reports
+- `datasets/pipeline` — generated training datasets
+
+The pipeline still accepts the legacy two-positional-argument interface for
+compatibility, while the preferred interface uses explicit roots or
+`--data-root`.

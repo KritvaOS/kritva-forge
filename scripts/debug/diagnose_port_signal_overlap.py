@@ -555,8 +555,8 @@ def main() -> int:
 
     parser.add_argument(
         "--rtl-root",
-        default="data/raw_rtl",
-        help="RTL root directory (default: data/raw_rtl)",
+        default="../kritva-forge-data/raw/rtl",
+        help="RTL root directory (default: ../kritva-forge-data/raw/rtl)",
     )
 
     parser.add_argument(

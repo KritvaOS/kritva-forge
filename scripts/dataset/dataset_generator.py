@@ -13,9 +13,6 @@
 # Created     : 02-10-2026
 # =============================================================================
 #--------------------------------------------------------------
-#     File   : dataset_generator
-#     Author : Dinesh Annayya
-#     Date   : 6th June 2026
 #     Purpose:  Generate LLM fine-tuning datasets.
 #           combined
 #            prompt        → RTL	RTL generation
@@ -39,14 +36,14 @@
 #  }
 #-------------------------------------------------------------
 #   
-#   out/
+#   normalized/ir/<ip>/
 #   └── uart/
 #       ├── hierarchy.yaml
 #       ├── modules/
 #       │   ├── uart_top.yaml
 #       │   ├── uart_tx.yaml
 #       │   └── uart_rx.yaml
-#       ├── prompts/
+#       ├── prompts/  (legacy co-located mode)
 #       │   ├── uart_top.txt
 #       │   ├── uart_tx.txt
 #       │   └── uart_rx.txt
@@ -76,8 +73,8 @@ RANDOM_SEED = 42
 
 USE_COMMENTS = True
 
-CURATED_ROOT = "data/curated"
-USE_CURATED = True
+CURATED_ROOT = os.environ.get("KRITVA_FORGE_CURATED_ROOT", "")
+USE_CURATED = bool(CURATED_ROOT)
 CURATED_VERBOSE = False
 
 SKIP_IPS = {
@@ -126,14 +123,19 @@ def find_prompt_files(
 def find_curated_prompt(
         ip,
         module,
-        prompt_file):
+        prompt_file,
+        curated_root=None):
 
     base = os.path.basename(
         prompt_file
     )
 
+    root = curated_root or CURATED_ROOT
+    if not root:
+        return None
+
     path = os.path.join(
-        CURATED_ROOT,
+        root,
         ip,
         "prompts",
         base
@@ -149,15 +151,19 @@ def find_curated_prompt(
 # Check any curated rtl  available at source path
 def find_curated_rtl(
         ip,
-        module):
+        module,
+        curated_root=None):
 
     for ext in (
         ".sv",
         ".v"
     ):
 
+        root = curated_root or CURATED_ROOT
+        if not root:
+            return None
         path = os.path.join(
-            CURATED_ROOT,
+            root,
             ip,
             "rtl",
             f"{module}{ext}"
@@ -609,7 +615,9 @@ def find_matching_rtl(
 # --------------------------------------------------
 
 def build_examples_from_ip(
-        ip_dir):
+        ip_dir,
+        prompt_root=None,
+        curated_root=None):
 
     examples = []
 
@@ -622,10 +630,16 @@ def build_examples_from_ip(
         "modules"
     )
 
-    prompts_dir = os.path.join(
-        ip_dir,
-        "prompts"
-    )
+    if prompt_root:
+        prompts_dir = os.path.join(
+            prompt_root,
+            ip_name
+        )
+    else:
+        prompts_dir = os.path.join(
+            ip_dir,
+            "prompts"
+        )
 
     for yaml_file in sorted(
         os.listdir(
@@ -695,7 +709,8 @@ def build_examples_from_ip(
             curated_rtl = (
                 find_curated_rtl(
                     ip_name,
-                    module_name
+                    module_name,
+                    curated_root=curated_root
                 )
             )
         
@@ -744,7 +759,8 @@ def build_examples_from_ip(
                 find_curated_prompt(
                     ip_name,
                     module_name,
-                    prompt_file
+                    prompt_file,
+                    curated_root=curated_root
                 )
             )
         
@@ -811,7 +827,9 @@ def build_examples_from_ip(
 # --------------------------------------------------
 
 def build_dataset(
-        ip_dirs):
+        ip_dirs,
+        prompt_root=None,
+        curated_root=None):
 
     dataset = []
 
@@ -819,7 +837,9 @@ def build_dataset(
 
         dataset.extend(
             build_examples_from_ip(
-                ip_dir
+                ip_dir,
+                prompt_root=prompt_root,
+                curated_root=curated_root
             )
         )
 
@@ -1002,7 +1022,9 @@ def build_stats(
 
 def generate_datasets(
         yaml_root,
-        out_dir):
+        out_dir,
+        prompt_root=None,
+        curated_root=None):
 
     os.makedirs(
         out_dir,
@@ -1049,15 +1071,21 @@ def generate_datasets(
     )
 
     train = build_dataset(
-        train_ips
+        train_ips,
+        prompt_root=prompt_root,
+        curated_root=curated_root
     )
 
     validation = build_dataset(
-        valid_ips
+        valid_ips,
+        prompt_root=prompt_root,
+        curated_root=curated_root
     )
 
     test = build_dataset(
-        test_ips
+        test_ips,
+        prompt_root=prompt_root,
+        curated_root=curated_root
     )
 
     all_examples = (
@@ -1324,18 +1352,19 @@ if __name__ == "__main__":
 
     import sys
 
-    if len(sys.argv) != 3:
+    if len(sys.argv) not in (3, 4, 5):
 
         print(
-            "Usage: "
-            "dataset_generator.py "
-            "<yaml_root> "
-            "<out_dir>"
+            "Usage: dataset_generator.py "
+            "<yaml_root> <out_dir> "
+            "[prompt_root] [curated_root]"
         )
 
         sys.exit(1)
 
     generate_datasets(
         sys.argv[1],
-        sys.argv[2]
+        sys.argv[2],
+        prompt_root=sys.argv[3] if len(sys.argv) >= 4 else None,
+        curated_root=sys.argv[4] if len(sys.argv) >= 5 else None,
     )

@@ -1,17 +1,10 @@
 # Kritva Forge CI
 
-The CI workflow is the merge gate for Kritva Forge.
+The `forge-ci.yml` workflow is the repository commit/merge gate.
 
-## Required checks
+The protected default branch should require the **Kritva Forge Gate** status
+check. The gate succeeds only when source-header validation and the Python test
+job both succeed.
 
-- `Source Header Check`
-- `Python Tests`
-- `Kritva Forge Gate`
-
-The final `Kritva Forge Gate` job fails if either required job fails.
-
-Configure the GitHub repository branch/ruleset protection so that
-**Kritva Forge Gate** is a required status check before merging.
-
-GitHub Actions executes workflows from `.github/workflows/` for matching
-push and pull-request events.
+The workflow does not require the private `kritva-forge-data` repository.
+Public CI tests code and infrastructure only.

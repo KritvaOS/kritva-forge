@@ -16,14 +16,14 @@
 # --------------------------------------------------------------
 # bootstrap_curated.py
 #
-# Populate data/curated from generated dataset artifacts.
+# Populate an explicitly selected curated/golden data root from generated artifacts.
 #
 # Copies:
-#   out/<ip>/prompts/*.txt
-#       -> data/curated/<ip>/prompts/
+#   normalized/ir/<ip>/prompts/*.txt
+#       -> <curated_root>/<ip>/prompts/
 #
 #   source RTL referenced by module YAML
-#       -> data/curated/<ip>/rtl/
+#       -> <curated_root>/<ip>/rtl/
 #
 # Existing curated files are NEVER overwritten.
 #-----------------------------------------------------------------
@@ -46,7 +46,7 @@ import yaml
 from collections import defaultdict
 
 
-CURATED_ROOT = "data/curated"
+CURATED_ROOT = os.environ.get("KRITVA_FORGE_CURATED_ROOT", "")
 
 
 def load_yaml(path):
@@ -90,7 +90,8 @@ def copy_if_missing(
 
 
 def process_ip(
-        ip_dir):
+        ip_dir,
+        curated_root):
 
     prompt_copied = 0
     prompt_existing = 0
@@ -202,7 +203,7 @@ def process_ip(
             )
         
             prompt_dst = os.path.join(
-                CURATED_ROOT,
+                curated_root,
                 ip_name,
                 "prompts",
                 prompt_file
@@ -236,7 +237,7 @@ def process_ip(
             )[1]
 
             rtl_dst = os.path.join(
-                CURATED_ROOT,
+                curated_root,
                 ip_name,
                 "rtl",
                 f"{module_name}{ext}"
@@ -265,17 +266,21 @@ def main():
 
     import sys
 
-    if len(sys.argv) != 2:
+    if len(sys.argv) not in (2, 3):
 
         print(
-            "Usage: "
-            "bootstrap_curated.py "
-            "<out_dir>"
+            "Usage: bootstrap_curated.py "
+            "<out_dir> [curated_root]"
         )
 
         sys.exit(1)
 
     out_root = sys.argv[1]
+    curated_root = sys.argv[2] if len(sys.argv) == 3 else CURATED_ROOT
+
+    if not curated_root:
+        print("[ERROR] curated_root is required")
+        sys.exit(1)
 
     total_prompt_copied = 0
     total_prompt_existing = 0
@@ -319,7 +324,7 @@ def main():
         prompt_existing, \
         rtl_copied, \
         rtl_existing = (
-            process_ip(ip_dir)
+            process_ip(ip_dir, curated_root)
         )
 
         total_prompt_copied += prompt_copied

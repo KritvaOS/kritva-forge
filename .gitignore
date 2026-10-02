@@ -1,27 +1,40 @@
-# Private data submodule / local data
-data/*
-!data/README.md
-
-# Generated output
-out/
-reports/generated/
-*.log
-
 # Python
 __pycache__/
 *.py[cod]
+*.pyo
 .pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+# Virtual environments
 .venv/
 venv/
+env/
+
+# Build and local runtime output
+build/
+dist/
 *.egg-info/
 
-# Local models / checkpoints
-models/
+# Local logs and diagnostics
+*.log
+*.tmp
+*.swp
 
-# IDE / OS
+# Local IDE settings
 .vscode/
 .idea/
-.DS_Store
 
-# Local experiment files
-*.tmp
+# Private data repository mount point
+data/raw/
+data/normalized/
+data/analysis/
+data/golden/
+data/generated/
+data/datasets/
+data/splits/
+data/manifests/
+
+# Model/checkpoint artifacts
+models/
+checkpoints/

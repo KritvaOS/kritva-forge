@@ -3,10 +3,10 @@
 # SPDX-License-Identifier: Apache-2.0
 #
 # File        : forge-ci.yml
-# Description : Kritva Forge source validation and test gates
+# Description : Kritva Forge continuous-integration gates
 #
 # Component   : Kritva Forge
-# Module      : ci
+# Module      : CI
 # Layer       : Development Infrastructure
 #
 # Author      : Kritva Forge Team
@@ -17,13 +17,9 @@ name: Kritva Forge CI
 
 on:
   push:
-    branches:
-      - main
-      - develop
+    branches: [main, develop]
   pull_request:
-    branches:
-      - main
-      - develop
+    branches: [main, develop]
   workflow_dispatch:
 
 permissions:
@@ -33,7 +29,6 @@ jobs:
   source-header:
     name: Source Header Check
     runs-on: ubuntu-latest
-
     steps:
       - name: Checkout
         uses: actions/checkout@v6
@@ -44,17 +39,14 @@ jobs:
           python-version: "3.12"
 
       - name: Validate source headers
-        run: |
-          python3 scripts/lint/check_source_headers.py             --mode tracked             --strict
+        run: python3 scripts/lint/check_source_headers.py --mode tracked --strict
 
       - name: Run header checker tests
-        run: |
-          python3 tests/lint/test_source_headers.py
+        run: python3 tests/lint/test_source_headers.py
 
   python-tests:
     name: Python Tests
     runs-on: ubuntu-latest
-
     steps:
       - name: Checkout
         uses: actions/checkout@v6
@@ -67,13 +59,13 @@ jobs:
       - name: Install dependencies
         run: |
           python3 -m pip install --upgrade pip
-          if [ -f requirements.txt ]; then
-            python3 -m pip install -r requirements.txt
-          fi
+          python3 -m pip install -r requirements.txt
+
+      - name: Compile Python sources
+        run: python3 -m compileall -q scripts tests
 
       - name: Run tests
-        run: |
-          python3 -m pytest -q
+        run: python3 -m pytest -q
 
   forge-gate:
     name: Kritva Forge Gate
@@ -82,7 +74,6 @@ jobs:
       - source-header
       - python-tests
     runs-on: ubuntu-latest
-
     steps:
       - name: Verify required jobs passed
         env:
@@ -91,6 +82,5 @@ jobs:
         run: |
           echo "Source Header Check: ${HEADER_RESULT}"
           echo "Python Tests:        ${TEST_RESULT}"
-
           test "${HEADER_RESULT}" = "success"
           test "${TEST_RESULT}" = "success"
