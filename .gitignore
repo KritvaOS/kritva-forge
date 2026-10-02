@@ -1,0 +1,27 @@
+# Private data submodule / local data
+data/*
+!data/README.md
+
+# Generated output
+out/
+reports/generated/
+*.log
+
+# Python
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.venv/
+venv/
+*.egg-info/
+
+# Local models / checkpoints
+models/
+
+# IDE / OS
+.vscode/
+.idea/
+.DS_Store
+
+# Local experiment files
+*.tmp

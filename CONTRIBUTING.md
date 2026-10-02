@@ -1,0 +1,34 @@
+# Contributing to Kritva Forge
+
+Contributions should preserve the separation between parsing, RTL IR, semantic analysis, structural analysis, FSM analysis, dataset generation, and AI/LLM tooling.
+
+Do not contribute proprietary RTL or restricted datasets to the public repository.
+
+## Source Header Validation
+
+```bash
+python3 scripts/lint/check_source_headers.py --mode tracked --strict
+```
+
+
+## Continuous Integration Gate
+
+Every pull request and push to the protected branches is validated by the
+Kritva Forge CI workflow.
+
+The required gates are:
+
+1. **Source Header Check**
+2. **Python Tests**
+3. **Kritva Forge Gate**
+
+The repository maintainers should configure the `Kritva Forge Gate` check as a
+required status check for the protected `main` branch.
+
+Local equivalent:
+
+```bash
+python3 scripts/lint/check_source_headers.py --mode all --strict
+python3 tests/lint/test_source_headers.py
+python3 -m pytest -q
+```

@@ -1,0 +1,6 @@
+# Kritva Forge runtime dependencies
+pyslang
+networkx
+PyYAML
+pyverilog
+pytest
