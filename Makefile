@@ -3,7 +3,7 @@
 # SPDX-License-Identifier: Apache-2.0
 #
 # File        : Makefile
-# Description : Build, test, and development targets for Kritva Forge
+# Description : Build, test, and data-pipeline targets for Kritva Forge
 #
 # Component   : Kritva Forge
 # Module      : Build Infrastructure
@@ -17,35 +17,39 @@ VENV ?= .venv
 PYTHON ?= $(VENV)/bin/python
 PIP ?= $(PYTHON) -m pip
 
-DATA_DIR ?= data/raw_rtl
-OUT_DIR ?= out
-PROJECT ?= $(OUT_DIR)
+# The public repository contains code only.  Runtime RTL and generated data
+# live in the sibling private repository by default.
+DATA_ROOT ?= ../kritva-forge-data
+DATA_DIR ?= $(DATA_ROOT)/raw/rtl
+NORMALIZED_DIR ?= $(DATA_ROOT)/normalized/ir
+PROMPT_DIR ?= $(DATA_ROOT)/generated/prompts
+REPORT_DIR ?= $(DATA_ROOT)/analysis/reports
+DATASET_DIR ?= $(DATA_ROOT)/datasets/pipeline
+CURATED_DIR ?=
+PROJECT ?= $(NORMALIZED_DIR)
 
-.PHONY: help venv setup test compile pipeline semantic clean
+.PHONY: help venv setup test compile pipeline headers clean
 
 help:
 	@echo "Kritva Forge targets:"
-	@echo "  make setup      - create .venv and install Python dependencies"
-	@echo "  make test       - run unit tests"
-	@echo "  make compile    - syntax-check Python sources"
-	@echo "  make pipeline   - run RTL pipeline (DATA_DIR and OUT_DIR configurable)"
-	@echo "  make semantic   - run semantic analysis (PROJECT configurable)"
-	@echo "  make clean      - remove generated Python/test/pipeline output"
+	@echo "  make setup       - create .venv and install Python dependencies"
+	@echo "  make test        - run unit tests"
+	@echo "  make compile     - syntax-check Python sources"
+	@echo "  make headers     - validate KritvaOS source headers"
+	@echo "  make pipeline    - parse RTL and generate normalized IR/datasets"
+	@echo "  make clean       - remove local Python/test caches only"
 	@echo ""
-	@echo "Environment:"
-	@echo "  VENV=<path>     - Python virtual environment (default: .venv)"
-	@echo "  PYTHON=<path>   - Python interpreter (default: .venv/bin/python)"
-	@echo "  DATA_DIR=<path> - RTL input directory (default: data/raw_rtl)"
-	@echo "  OUT_DIR=<path>  - pipeline output directory (default: out)"
-	@echo "  PROJECT=<path>  - semantic-analysis project (default: out)"
+	@echo "Private data repository:"
+	@echo "  DATA_ROOT=<path>       (default: ../kritva-forge-data)"
+	@echo "  DATA_DIR=<path>        RTL input (default: DATA_ROOT/raw/rtl)"
+	@echo "  NORMALIZED_DIR=<path>  normalized IR (default: DATA_ROOT/normalized/ir)"
+	@echo "  PROMPT_DIR=<path>      generated prompts (default: DATA_ROOT/generated/prompts)"
+	@echo "  REPORT_DIR=<path>      reports (default: DATA_ROOT/analysis/reports)"
+	@echo "  DATASET_DIR=<path>     datasets (default: DATA_ROOT/datasets/pipeline)"
+	@echo "  CURATED_DIR=<path>     optional curated prompt/RTL root"
 
 venv:
-	@if [ ! -x "$(PYTHON)" ]; then \
-		echo "[INFO] Creating Python virtual environment: $(VENV)"; \
-		python3 -m venv "$(VENV)"; \
-	else \
-		echo "[INFO] Python virtual environment already exists: $(VENV)"; \
-	fi
+	@if [ ! -x "$(PYTHON)" ]; then 		echo "[INFO] Creating Python virtual environment: $(VENV)"; 		python3 -m venv "$(VENV)"; 	else 		echo "[INFO] Python virtual environment already exists: $(VENV)"; 	fi
 
 setup: venv
 	@echo "[INFO] Installing Kritva Forge Python dependencies..."
@@ -58,12 +62,17 @@ compile: setup
 test: setup
 	$(PYTHON) -m pytest -q
 
-pipeline: setup
-	PYTHONPATH=. $(PYTHON) -m scripts.pipeline.run_pipeline $(DATA_DIR) $(OUT_DIR)
+headers:
+	python3 scripts/lint/check_source_headers.py --mode tracked --strict
+	python3 tests/lint/test_source_headers.py
 
-semantic: setup
-	PYTHONPATH=. $(PYTHON) -m scripts.pipeline.run_semantic $(PROJECT)
+pipeline: setup
+	@echo "[INFO] RTL input      : $(DATA_DIR)"
+	@echo "[INFO] Normalized IR  : $(NORMALIZED_DIR)"
+	@echo "[INFO] Prompts        : $(PROMPT_DIR)"
+	@echo "[INFO] Reports        : $(REPORT_DIR)"
+	@echo "[INFO] Datasets       : $(DATASET_DIR)"
+	PYTHONPATH=. $(PYTHON) -m scripts.pipeline.run_pipeline 		--rtl-root "$(DATA_DIR)" 		--normalized-root "$(NORMALIZED_DIR)" 		--prompt-root "$(PROMPT_DIR)" 		--reports-root "$(REPORT_DIR)" 		--datasets-root "$(DATASET_DIR)" 		$(if $(CURATED_DIR),--curated-root "$(CURATED_DIR)",)
 
 clean:
-	rm -rf __pycache__ scripts/**/__pycache__ tests/**/__pycache__ .pytest_cache out
-
+	rm -rf __pycache__ scripts/**/__pycache__ tests/**/__pycache__ .pytest_cache
