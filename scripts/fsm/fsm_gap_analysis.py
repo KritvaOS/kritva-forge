@@ -22,119 +22,118 @@ import os
 import yaml
 import re
 
-ROOT = "out"
+from scripts.core.paths import iter_module_yamls, normalized_root_from_argv
+
+# Canonical module IR only: <normalized-root>/<ip>/modules/*.yaml (KF-DQ-001).
+# Usage: python -m <this module> [normalized_root]
+ROOT = normalized_root_from_argv()
 
 print("=" * 80)
 print("FSM GAP ANALYSIS")
 print("=" * 80)
 
-for root, dirs, files in os.walk(ROOT):
+for path in iter_module_yamls(ROOT):
 
-    for fn in files:
+    fn = path.name
 
-        if not fn.endswith(".yaml"):
+    try:
+        with open(path) as f:
+            data = yaml.safe_load(f)
+
+        summary = data.get("summary", {})
+
+        fsm_states = summary.get(
+            "num_fsm_states",
+            0
+        )
+
+        if fsm_states != 0:
             continue
 
-        path = os.path.join(root, fn)
+        signals = data.get(
+            "signals",
+            []
+        )
 
-        try:
-            with open(path) as f:
-                data = yaml.safe_load(f)
+        state_signals = []
 
-            summary = data.get("summary", {})
+        for sig in signals:
 
-            fsm_states = summary.get(
-                "num_fsm_states",
-                0
+            name = sig.get(
+                "name",
+                ""
             )
 
-            if fsm_states != 0:
-                continue
-
-            signals = data.get(
-                "signals",
-                []
-            )
-
-            state_signals = []
-
-            for sig in signals:
-
-                name = sig.get(
-                    "name",
-                    ""
-                )
-
-                if re.search(
-                    r'(fsm|state)',
-                    name,
-                    re.I
-                ):
-                    state_signals.append(
-                        name
-                    )
-
-            case_count = summary.get(
-                "num_case_statements",
-                0
-            )
-
-            ff_count = summary.get(
-                "num_always_ff",
-                0
-            )
-
-            comb_count = summary.get(
-                "num_always_comb",
-                0
-            )
-
-            #
-            # Likely FSM candidate
-            #
-            if (
-                case_count > 0
-                and
-                state_signals
+            if re.search(
+                r'(fsm|state)',
+                name,
+                re.I
             ):
+                state_signals.append(
+                    name
+                )
 
-                print("\n" + "-" * 60)
+        case_count = summary.get(
+            "num_case_statements",
+            0
+        )
 
-                print(
-                    "MODULE:",
-                    data.get(
-                        "module_name",
-                        fn.replace(
-                            ".yaml",
-                            ""
-                        )
+        ff_count = summary.get(
+            "num_always_ff",
+            0
+        )
+
+        comb_count = summary.get(
+            "num_always_comb",
+            0
+        )
+
+        #
+        # Likely FSM candidate
+        #
+        if (
+            case_count > 0
+            and
+            state_signals
+        ):
+
+            print("\n" + "-" * 60)
+
+            print(
+                "MODULE:",
+                data.get(
+                    "module_name",
+                    fn.replace(
+                        ".yaml",
+                        ""
                     )
                 )
+            )
 
+            print(
+                "CASES:",
+                case_count
+            )
+
+            print(
+                "ALWAYS_FF:",
+                ff_count
+            )
+
+            print(
+                "ALWAYS_COMB:",
+                comb_count
+            )
+
+            print(
+                "STATE SIGNALS:"
+            )
+
+            for s in state_signals[:10]:
                 print(
-                    "CASES:",
-                    case_count
+                    "   ",
+                    s
                 )
 
-                print(
-                    "ALWAYS_FF:",
-                    ff_count
-                )
-
-                print(
-                    "ALWAYS_COMB:",
-                    comb_count
-                )
-
-                print(
-                    "STATE SIGNALS:"
-                )
-
-                for s in state_signals[:10]:
-                    print(
-                        "   ",
-                        s
-                    )
-
-        except Exception:
-            pass
+    except Exception:
+        pass

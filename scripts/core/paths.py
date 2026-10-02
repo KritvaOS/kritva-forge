@@ -18,6 +18,75 @@ from __future__ import annotations
 import os
 from dataclasses import dataclass
 from pathlib import Path
+from typing import Iterator
+
+# -----------------------------------------------------------------------------
+# Canonical normalized IR layout (KF-DQ-001)
+#
+#   normalized/ir/
+#     <ip>/
+#       hierarchy.yaml        IP-level metadata
+#       summary.yaml          IP-level metadata
+#       modules/
+#         <module>.yaml       the ONLY canonical module representation
+#       rtl/                  RTL copies (location decision deferred to KF-DQ-006)
+#
+# Any other ``*.yaml`` directly under ``<ip>/`` is non-canonical and must not
+# be consumed.  Always enumerate module IR through ``iter_module_yamls()``.
+# -----------------------------------------------------------------------------
+
+MODULES_DIRNAME = "modules"
+IP_METADATA_FILES = ("hierarchy.yaml", "summary.yaml")
+
+
+def iter_ip_dirs(normalized_root: str | os.PathLike[str]) -> Iterator[Path]:
+    """Yield canonical IP directories (those containing ``modules/``), sorted."""
+    root = Path(normalized_root)
+    if not root.is_dir():
+        return
+    for ip_dir in sorted(root.iterdir()):
+        if ip_dir.name.startswith("."):
+            continue
+        if (ip_dir / MODULES_DIRNAME).is_dir():
+            yield ip_dir
+
+
+def iter_module_yamls(
+    normalized_root: str | os.PathLike[str],
+    ip: str | None = None,
+) -> Iterator[Path]:
+    """Yield canonical module YAMLs ``<root>/<ip>/modules/<module>.yaml``, sorted.
+
+    Root-level ``<ip>/<module>.yaml`` files, ``hierarchy.yaml`` and
+    ``summary.yaml`` are never returned.
+    """
+    root = Path(normalized_root)
+    ip_dirs = [root / ip] if ip else iter_ip_dirs(root)
+    for ip_dir in ip_dirs:
+        modules_dir = ip_dir / MODULES_DIRNAME
+        if not modules_dir.is_dir():
+            continue
+        for path in sorted(modules_dir.iterdir()):
+            if path.is_file() and path.suffix == ".yaml":
+                yield path
+
+
+def find_noncanonical_module_yamls(
+    normalized_root: str | os.PathLike[str],
+) -> list[Path]:
+    """Return YAMLs directly under ``<ip>/`` that are not IP metadata.
+
+    A non-empty result means a duplicate/stale module representation exists.
+    """
+    root = Path(normalized_root)
+    if not root.is_dir():
+        return []
+    found = []
+    for ip_dir in sorted(p for p in root.iterdir() if p.is_dir()):
+        for path in sorted(ip_dir.glob("*.yaml")):
+            if path.name not in IP_METADATA_FILES:
+                found.append(path)
+    return found
 
 
 @dataclass(frozen=True)
@@ -45,6 +114,15 @@ class ForgeDataPaths:
     @property
     def normalized_ir(self) -> Path:
         return self.normalized / "ir"
+
+    def module_dir(self, ip: str) -> Path:
+        return self.normalized_ir / ip / MODULES_DIRNAME
+
+    def module_yaml(self, ip: str, module: str) -> Path:
+        return self.module_dir(ip) / f"{module}.yaml"
+
+    def iter_module_yamls(self, ip: str | None = None) -> Iterator[Path]:
+        return iter_module_yamls(self.normalized_ir, ip)
 
     @property
     def analysis(self) -> Path:
@@ -112,3 +190,21 @@ def default_data_root() -> Path:
     if configured:
         return Path(configured).expanduser().resolve()
     return (Path(__file__).resolve().parents[3] / "kritva-forge-data").resolve()
+
+
+def default_normalized_root() -> Path:
+    """Return ``<data-root>/normalized/ir`` for the default data repository."""
+    return ForgeDataPaths.from_root(default_data_root()).normalized_ir
+
+
+def normalized_root_from_argv(argv: list[str] | None = None) -> Path:
+    """Resolve the normalized IR root for simple CLI report scripts.
+
+    ``argv[1]`` overrides the default ``<data-root>/normalized/ir``.
+    """
+    import sys
+
+    argv = sys.argv if argv is None else argv
+    if len(argv) > 1 and argv[1]:
+        return Path(argv[1]).expanduser().resolve()
+    return default_normalized_root()

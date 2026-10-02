@@ -66,42 +66,31 @@
 #           ✅ Per-IP summary
 #           ✅ Graceful error handling
 #---------------------------------------------------------
-#  Expected input data folder structure with filelist
-#     data/raw_rtl/
-#      ├── common/
-#      │   ├── sync_fifo.v
-#      │   ├── async_fifo.v
-#      │   └── reset_sync.v
-#      │
+#  Expected input layout (private data repository, KF-DQ-001):
+#     <data-root>/raw/rtl/original/
+#      ├── common/                 shared library RTL (not an IP)
 #      ├── uart/
 #      │   ├── files.f
-#      │   ├── uart_top.v
-#      │   ├── uart_tx.v
-#      │   ├── uart_rx.v
-#      │   └── uart_baudrate.v
-#      │
-#      ├── spi/
-#      │   ├── files.f
-#      │   ├── spi_top.v
-#      │   └── spi_master.v
-#      │
-#      └── i2c/
-#          ├── files.f
-#          ├── i2c_top.v
-#          └── i2c_master.v
-# Command
-#  python scripts/run_pipeline.py \
-#    data/raw_rtl \
-#    out
-#--------------------------------------------------------------
-#   run_pipeline.py
-#   
-#   RTL -> YAML -> Dataset pipeline
-#   
-#   Usage:
-#       python scripts/run_pipeline.py \
-#           data/raw_rtl \
-#           out
+#      │   └── *.v / *.sv
+#      └── ...
+#
+#  Canonical outputs:
+#     <data-root>/normalized/ir/<ip>/hierarchy.yaml
+#     <data-root>/normalized/ir/<ip>/summary.yaml
+#     <data-root>/normalized/ir/<ip>/modules/<module>.yaml
+#     <data-root>/generated/prompts/<ip>/
+#     <data-root>/analysis/reports/
+#     <data-root>/datasets/pipeline/
+#
+#  Usage (preferred):
+#     PYTHONPATH=. python -m scripts.pipeline.run_pipeline \
+#         --data-root ../kritva-forge-data
+#  or explicit roots (see `make pipeline`):
+#     PYTHONPATH=. python -m scripts.pipeline.run_pipeline \
+#         --rtl-root ... --normalized-root ... --prompt-root ... \
+#         --reports-root ... --datasets-root ...
+#
+#  Prompts, reports and datasets are never written inside normalized_root.
 #--------------------------------------------------------------
 
 import json
@@ -116,6 +105,9 @@ from scripts.parser.statistics import print_summary
 from scripts.pipeline.run_semantic import run_semantic
 
 import logging
+from pathlib import Path
+
+from scripts.core.paths import ForgeDataPaths, find_noncanonical_module_yamls
 
 logging.basicConfig(
     level=logging.INFO,
@@ -221,6 +213,50 @@ def print_pipeline_summary(results):
         print(f"  {result['ip']:20s} -> {result['top']}")
 
 
+def _is_within(path, root):
+    path = os.path.abspath(path)
+    root = os.path.abspath(root)
+    return os.path.commonpath([path, root]) == root
+
+
+def default_output_roots(normalized_root):
+    """Default prompt/report/dataset roots for a given ``normalized_root``.
+
+    When ``normalized_root`` is ``<data-root>/normalized/ir`` the canonical
+    ``ForgeDataPaths`` locations are used.  Otherwise outputs go to siblings of
+    ``normalized_root`` (never inside it).
+    """
+    normalized_root = Path(os.path.abspath(normalized_root))
+
+    if (normalized_root.name == "ir"
+            and normalized_root.parent.name == "normalized"):
+        data = ForgeDataPaths.from_root(normalized_root.parent.parent)
+        return {
+            "prompts": str(data.prompts),
+            "reports": str(data.reports),
+            "datasets": str(data.pipeline_datasets),
+        }
+
+    parent = normalized_root.parent
+    return {
+        "prompts": str(parent / "prompts"),
+        "reports": str(parent / "reports"),
+        "datasets": str(parent / "datasets"),
+    }
+
+
+def check_canonical_layout(normalized_root):
+    """Fail if any non-canonical module YAML exists under ``normalized_root``."""
+    stale = find_noncanonical_module_yamls(normalized_root)
+    if stale:
+        sample = "\n  ".join(str(p) for p in stale[:10])
+        raise RuntimeError(
+            f"{len(stale)} non-canonical module YAML(s) found directly under "
+            f"<ip>/ in {normalized_root}; only <ip>/modules/<module>.yaml is "
+            f"canonical (KF-DQ-001). First entries:\n  {sample}"
+        )
+
+
 def run_pipeline(
         rtl_root,
         normalized_root,
@@ -230,18 +266,31 @@ def run_pipeline(
         curated_root=None):
     """Run the complete Forge RTL analysis pipeline.
 
-    ``normalized_root`` contains module YAML/hierarchy artifacts.
-    Prompts, reports, and datasets are kept in their dedicated data-repository
-    locations when those paths are supplied.
+    ``normalized_root`` contains only canonical IR:
+    ``<ip>/{hierarchy.yaml,summary.yaml,modules/<module>.yaml}``.
+    Prompts, reports, and datasets go to their dedicated data-repository
+    locations (see ``default_output_roots``) and never inside
+    ``normalized_root``.
     """
 
     normalized_root = os.path.abspath(normalized_root)
+    defaults = default_output_roots(normalized_root)
     if prompt_root is None:
-        prompt_root = os.path.join(normalized_root, "prompts")
+        prompt_root = defaults["prompts"]
     if datasets_root is None:
-        datasets_root = os.path.join(normalized_root, "datasets")
+        datasets_root = defaults["datasets"]
     if reports_root is None:
-        reports_root = os.path.join(normalized_root, "reports")
+        reports_root = defaults["reports"]
+
+    for name, path in (
+            ("prompt_root", prompt_root),
+            ("datasets_root", datasets_root),
+            ("reports_root", reports_root)):
+        if _is_within(path, normalized_root):
+            raise ValueError(
+                f"{name} must not be inside normalized_root "
+                f"({path} is under {normalized_root})"
+            )
 
     for path in (normalized_root, prompt_root, datasets_root, reports_root):
         os.makedirs(path, exist_ok=True)
@@ -272,6 +321,8 @@ def run_pipeline(
             traceback.print_exc()
             print("=" * 80)
             raise
+
+    check_canonical_layout(normalized_root)
 
     stats_path = save_pipeline_stats(results, reports_root)
     print(f"[INFO] Pipeline statistics: {stats_path}")
@@ -346,8 +397,6 @@ def main():
     args = parse_args()
 
     if args.data_root:
-        from scripts.core.paths import ForgeDataPaths
-
         data = ForgeDataPaths.from_root(args.data_root)
         rtl_root = args.rtl_root or str(data.raw_rtl / "original")
         normalized_root = args.normalized_root or str(data.normalized_ir)

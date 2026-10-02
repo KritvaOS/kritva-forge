@@ -19,13 +19,16 @@
 # Generate FSM coverage reports from parser YAML output.
 # 
 # Usage:
-# python scripts/fsm_report.py out reports
+# PYTHONPATH=. python -m scripts.analysis.fsm_report \
+#     ../kritva-forge-data/normalized/ir <report_dir>
 # -----------------------------------------------------
 
 import os
 import csv
 import sys
 import yaml
+
+from scripts.core.paths import iter_module_yamls
 
 IGNORE_FILES = {
     "hierarchy",
@@ -84,40 +87,31 @@ def load_yaml(path):
 
 
 def collect_modules(out_dir):
+    """Load canonical module IR (``<ip>/modules/*.yaml``) below ``out_dir``.
+
+    KF-DQ-001: root-level ``<ip>/<module>.yaml`` duplicates, ``hierarchy.yaml``
+    and ``summary.yaml`` are never read.
+    """
     modules = []
-    
-    for root, _, files in os.walk(out_dir):
 
-        for f in files:
+    for path in iter_module_yamls(out_dir):
 
-            if not f.endswith(".yaml"):
-                continue
+        path = str(path)
 
-            #
-            # Skip report/helper files
-            #
-            stem = os.path.splitext(f)[0]
+        data = load_yaml(path)
 
-            if stem in IGNORE_FILES:
-                continue
+        if not data:
+            continue
 
-            path = os.path.join(root, f)
+        # Ignore bogus module
+        module_name = get_module_name(data,path)
 
-            data = load_yaml(path)
+        if module_name in IGNORE_FILES:
+            continue
 
-            if not data:
-                continue
-
-            # Ignore bogus module
-            module_name = get_module_name(data,path)
-
-            if module_name in IGNORE_FILES:
-                continue
-
-            modules.append(
-                (path, data)
-            )
-
+        modules.append(
+            (path, data)
+        )
 
     return modules
 
@@ -594,7 +588,7 @@ def main():
         print(
             "Usage:\n"
             "  python fsm_report.py "
-            "<out_dir> "
+            "<normalized_root> "
             "<report_dir>"
         )
     

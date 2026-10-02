@@ -19,85 +19,84 @@
 import os
 import yaml
 
-ROOT = "out"
+from scripts.core.paths import iter_module_yamls, normalized_root_from_argv
+
+# Canonical module IR only: <normalized-root>/<ip>/modules/*.yaml (KF-DQ-001).
+# Usage: python -m <this module> [normalized_root]
+ROOT = normalized_root_from_argv()
 
 print("=" * 80)
 print("FSM TRANSITION DEBUG")
 print("=" * 80)
 
-for root, dirs, files in os.walk(ROOT):
+for path in iter_module_yamls(ROOT):
 
-    for fn in files:
+    fn = path.name
 
-        if not fn.endswith(".yaml"):
+    try:
+
+        with open(path) as f:
+            data = yaml.safe_load(f)
+
+        fsm = data.get("fsm")
+
+        if not isinstance(fsm, dict):
             continue
 
-        path = os.path.join(root, fn)
+        states = fsm.get(
+            "states",
+            []
+        )
 
-        try:
+        transitions = fsm.get(
+            "transitions",
+            []
+        )
 
-            with open(path) as f:
-                data = yaml.safe_load(f)
+        if (
+            len(states) >= 4
+            and
+            len(transitions) == 0
+        ):
 
-            fsm = data.get("fsm")
+            print()
+            print("-" * 80)
 
-            if not isinstance(fsm, dict):
-                continue
-
-            states = fsm.get(
-                "states",
-                []
+            print(
+                "MODULE:",
+                data.get(
+                    "module_name",
+                    fn.replace(
+                        ".yaml",
+                        ""
+                    )
+                )
             )
 
-            transitions = fsm.get(
-                "transitions",
-                []
+            print(
+                "STATE REG:",
+                fsm.get(
+                    "state_reg"
+                )
             )
 
-            if (
-                len(states) >= 4
-                and
-                len(transitions) == 0
-            ):
+            print(
+                "NEXT STATE:",
+                fsm.get(
+                    "next_state"
+                )
+            )
 
-                print()
-                print("-" * 80)
+            print(
+                "STATES:"
+            )
+
+            for s in states:
 
                 print(
-                    "MODULE:",
-                    data.get(
-                        "module_name",
-                        fn.replace(
-                            ".yaml",
-                            ""
-                        )
-                    )
+                    "   ",
+                    s
                 )
 
-                print(
-                    "STATE REG:",
-                    fsm.get(
-                        "state_reg"
-                    )
-                )
-
-                print(
-                    "NEXT STATE:",
-                    fsm.get(
-                        "next_state"
-                    )
-                )
-
-                print(
-                    "STATES:"
-                )
-
-                for s in states:
-
-                    print(
-                        "   ",
-                        s
-                    )
-
-        except Exception:
-            pass
+    except Exception:
+        pass

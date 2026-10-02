@@ -22,56 +22,55 @@ import os
 import yaml
 from collections import Counter
 
-ROOT = "out"
+from scripts.core.paths import iter_module_yamls, normalized_root_from_argv
+
+# Canonical module IR only: <normalized-root>/<ip>/modules/*.yaml (KF-DQ-001).
+# Usage: python -m <this module> [normalized_root]
+ROOT = normalized_root_from_argv()
 
 hist = Counter()
 
 fsm_count = 0
 
-for root, dirs, files in os.walk(ROOT):
+for path in iter_module_yamls(ROOT):
 
-    for fn in files:
+    fn = path.name
 
-        if not fn.endswith(".yaml"):
+    try:
+
+        with open(path) as f:
+            data = yaml.safe_load(f)
+
+
+        fsm = data.get("fsm")
+
+        if not isinstance(fsm, dict):
             continue
 
-        path = os.path.join(root, fn)
+        if len(fsm.get("states", [])) < 2:
+            continue
 
-        try:
+        fsm_count += 1
 
-            with open(path) as f:
-                data = yaml.safe_load(f)
+        enc = fsm.get(
+            "state_encoding",
+            {}
+        )
 
+        if not enc:
 
-            fsm = data.get("fsm")
+            hist["none"] += 1
+            continue
 
-            if not isinstance(fsm, dict):
-                continue
+        enc_type = enc.get(
+            "type",
+            "unknown"
+        )
 
-            if len(fsm.get("states", [])) < 2:
-                continue
+        hist[enc_type] += 1
 
-            fsm_count += 1
-
-            enc = fsm.get(
-                "state_encoding",
-                {}
-            )
-
-            if not enc:
-
-                hist["none"] += 1
-                continue
-
-            enc_type = enc.get(
-                "type",
-                "unknown"
-            )
-
-            hist[enc_type] += 1
-
-        except Exception:
-            pass
+    except Exception:
+        pass
 
 print("=" * 80)
 print("FSM ENCODING REPORT")

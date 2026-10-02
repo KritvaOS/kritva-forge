@@ -45,6 +45,8 @@ import shutil
 import yaml
 from collections import defaultdict
 
+from scripts.core.paths import iter_module_yamls
+
 
 CURATED_ROOT = os.environ.get("KRITVA_FORGE_CURATED_ROOT", "")
 
@@ -161,15 +163,12 @@ def process_ip(
         )
 
 
-    for yaml_file in sorted(
-            os.listdir(
-                modules_dir
-            )
+    for yaml_path in iter_module_yamls(
+            os.path.dirname(ip_dir),
+            ip_name,
     ):
 
-        if not yaml_file.endswith(
-                ".yaml"):
-            continue
+        yaml_file = yaml_path.name
 
         module_name = os.path.splitext(
             yaml_file

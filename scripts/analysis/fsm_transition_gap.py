@@ -20,86 +20,85 @@
 import os
 import yaml
 
-ROOT = "out"
+from scripts.core.paths import iter_module_yamls, normalized_root_from_argv
+
+# Canonical module IR only: <normalized-root>/<ip>/modules/*.yaml (KF-DQ-001).
+# Usage: python -m <this module> [normalized_root]
+ROOT = normalized_root_from_argv()
 
 rows = []
 
-for root, dirs, files in os.walk(ROOT):
+for path in iter_module_yamls(ROOT):
 
-    for fn in files:
+    fn = path.name
 
-        if not fn.endswith(".yaml"):
+    try:
+
+        with open(path) as f:
+
+            data = yaml.safe_load(f)
+
+        fsm = data.get("fsm")
+
+        if not isinstance(fsm, dict):
             continue
 
-        path = os.path.join(root, fn)
+        states = fsm.get(
+            "states",
+            []
+        )
 
-        try:
+        if len(states) < 2:
+            continue
 
-            with open(path) as f:
+        transitions = fsm.get(
+            "transitions",
+            []
+        )
 
-                data = yaml.safe_load(f)
+        quality = fsm.get(
+            "quality",
+            {}
+        )
 
-            fsm = data.get("fsm")
-
-            if not isinstance(fsm, dict):
-                continue
-
-            states = fsm.get(
-                "states",
-                []
+        module_name = data.get(
+            "module_name",
+            fn.replace(
+                ".yaml",
+                ""
             )
+        )
 
-            if len(states) < 2:
-                continue
+        rows.append({
 
-            transitions = fsm.get(
-                "transitions",
-                []
-            )
+            "module":
+                module_name,
 
-            quality = fsm.get(
-                "quality",
-                {}
-            )
+            "states":
+                len(states),
 
-            module_name = data.get(
-                "module_name",
-                fn.replace(
-                    ".yaml",
-                    ""
+            "transitions":
+                len(transitions),
+
+            "coverage":
+                quality.get(
+                    "transition_coverage",
+                    0.0
+                ),
+
+            "style":
+                fsm.get(
+                    "style"
+                ),
+
+            "confidence":
+                fsm.get(
+                    "confidence"
                 )
-            )
+        })
 
-            rows.append({
-
-                "module":
-                    module_name,
-
-                "states":
-                    len(states),
-
-                "transitions":
-                    len(transitions),
-
-                "coverage":
-                    quality.get(
-                        "transition_coverage",
-                        0.0
-                    ),
-
-                "style":
-                    fsm.get(
-                        "style"
-                    ),
-
-                "confidence":
-                    fsm.get(
-                        "confidence"
-                    )
-            })
-
-        except Exception:
-            pass
+    except Exception:
+        pass
 
 #
 # sort worst first
