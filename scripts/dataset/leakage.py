@@ -172,16 +172,31 @@ def record_id(record: dict) -> str:
     ]).encode("utf-8")).hexdigest()[:_DIGEST_HEX]
 
 
-def compute_identities(record: dict, spec: dict, source_text: str) -> dict:
-    """All leakage identities of one dataset record."""
-    body = module_body(source_text, record["module"])
+def content_identities(module: str, spec: dict, source_text: str, fallback_body: str | None = None) -> dict:
+    """Module-level content identities (``source_rtl``, ``module_body``, ``normalized_ir``).
+
+    Shared with the KF-DQ-005 provenance manifest so both use one definition.
+    """
+    body = module_body(source_text, module)
     if body is None:
-        body = strip_comments(record["completion"])
+        body = strip_comments(fallback_body if fallback_body is not None else source_text)
     return {
-        "record_id": record_id(record),
         "source_rtl": _digest("source_rtl", normalize_text(source_text)),
         "module_body": _digest("module_body", _collapse(body)),
         "normalized_ir": _digest("normalized_ir", json.dumps(_strip_ir(spec), sort_keys=True, separators=(",", ":"))),
+        "_body": body,
+    }
+
+
+def compute_identities(record: dict, spec: dict, source_text: str) -> dict:
+    """All leakage identities of one dataset record."""
+    content = content_identities(record["module"], spec, source_text, fallback_body=record["completion"])
+    body = content["_body"]
+    return {
+        "record_id": record_id(record),
+        "source_rtl": content["source_rtl"],
+        "module_body": content["module_body"],
+        "normalized_ir": content["normalized_ir"],
         "completion": _digest("completion", normalize_text(record["completion"])),
         "body_shape": _digest("body_shape", body_shape(body)),
         "module_name": str(record["module"]),

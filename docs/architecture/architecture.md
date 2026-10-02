@@ -571,6 +571,101 @@ fails if any hard group crosses splits, a record is duplicated, or the
 manifest disagrees with the dataset files.  `make check-leakage` re-runs the
 gate against an existing data checkout.
 
+
+## 11.2 RTL Provenance
+
+Every canonical module is traceable from dataset record back to source RTL
+(`scripts/core/provenance.py`, `PROVENANCE_VERSION = 1`):
+
+```text
+raw/rtl/original/<ip>/...              source file      sha256(file bytes)
+  -> normalized/ir/<ip>/modules/<m>    normalized IR    sha256(YAML bytes)
+  -> generated/prompts/<ip>/<m>.*      prompts          sha256(prompt bytes)
+  -> datasets/pipeline/<split>.jsonl   dataset records  record_id (KF-DQ-004)
+```
+
+The canonical manifest is `manifests/provenance_manifest.json` in the data
+repository, and the validation report is `analysis/reports/provenance_report.json`.
+
+Each module entry records:
+
+- `module_id`
+- `source` (path and sha256)
+- `contributing_sources` (the primary file plus include files, each with role and sha256)
+- `unresolved_includes` and `external_includes`
+- `normalized_ir`:
+  - path
+  - sha256
+  - `ir_content`, the location-free KF-DQ-004 identity
+- `module_body`
+- `prompts`
+- `artifacts` (the `normalized/ir/<ip>/rtl/` copy of the source)
+- `dataset_records` (record_id and split for each record)
+- `transformation` status
+
+The manifest also has a `sources` index that lists every source file with its
+sha256 and the modules it feeds. The pipeline and schema versions are recorded
+at the top level.
+
+Identities are kept distinct:
+
+| Identity | Form | Meaning |
+|---|---|---|
+| source | 64-hex sha256 | Exact content of one RTL file |
+| module | `mod1:` + 16 hex of sha256(`kf-module`, `v1`, ip, module) | Logical canonical module `<ip>/<module>` |
+| module body | `m1:...` (KF-DQ-004) | Module text with comments and whitespace removed |
+| normalized IR | sha256 of the YAML file; `ir_content` `n1:...` (KF-DQ-004) | Exact IR file; IR content without location fields |
+| IR node | `n1:...` `node_id` (KF-DQ-003) | One IR node |
+| dataset record | `r1:...` (KF-DQ-004) | One (ip, module, task, prompt_variant) record |
+
+**Dataset records** carry a compact `provenance` block:
+
+- `record_id`
+- `module_id`
+- source path and sha256
+- IR path and sha256
+- `generated_artifact`
+
+The RTL text is not duplicated in this block. `generated_artifact` is `null` unless a curated RTL file replaced the completion.
+
+`rtl_source` is `original`, or `curated` when a curated RTL file was used. It was previously mislabelled `generated`.
+
+**Policies:**
+
+- **Paths** are POSIX and relative to the data root (KF-DQ-002).
+- **Hashes** are SHA-256 of raw bytes, with no mtime, PID, UUID, object id or absolute path.
+- **Ordering:** all lists are sorted, and JSON is written with sorted keys.
+
+The manifest is byte-identical across runs and checkout locations. Any change to the identity or manifest format bumps `PROVENANCE_VERSION`.
+
+Canonical normalized IR is not changed by KF-DQ-005.
+
+**Missing or external sources:**
+
+- A missing primary source fails validation.
+- An unconditional `` `include`` that cannot be resolved fails validation.
+- A conditional include inside `` `ifdef``/`` `ifndef`` that is not part of the corpus is recorded under `external_includes` and reported, not failed. Macros are not evaluated. An example is yifive's optional `ycr_arch_custom.svh`.
+
+Includes are resolved in this order:
+
+1. The including file's directory.
+2. The IP's `files.f` `+incdir+` directories.
+3. A unique basename match inside the IP.
+
+**Regeneration and validation:** `make pipeline` rewrites the manifest and fails if validation fails. `make check-provenance` (`python3 scripts/core/provenance.py --check`) recomputes the manifest from the data tree and fails on any of these:
+
+- missing, orphan or duplicate records
+- missing or duplicate module identities
+- invalid or incorrect hashes
+- absolute paths
+- unresolved sources or includes
+- invalid IR references
+- a schema-version mismatch
+- dataset records without traceability
+- a stored manifest that differs from the recomputed one
+
+`--write` regenerates the manifest in place.
+
 ---
 
 # 12. Private Data Repository
