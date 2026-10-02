@@ -1134,10 +1134,10 @@ def parse_args() -> argparse.Namespace:
 
     parser.add_argument(
         "--rtl-root",
-        default="data/raw_rtl",
+        default="../kritva-forge-data/raw/rtl",
         help=(
             "RTL root containing IP directories "
-            "(default: data/raw_rtl)"
+            "(default: ../kritva-forge-data/raw/rtl)"
         ),
     )
 

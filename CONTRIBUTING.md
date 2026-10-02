@@ -4,10 +4,40 @@ Contributions should preserve the separation between parsing, RTL IR, semantic a
 
 Do not contribute proprietary RTL or restricted datasets to the public repository.
 
+## Local Development
+
+The standard setup uses a sibling private data repository:
+
+```text
+~/workarea/kritvaos/
+├── kritva-forge/
+└── kritva-forge-data/
+```
+
+Initialize the environment and run the gates:
+
+```bash
+make setup
+make headers
+make test
+```
+
+Run the RTL pipeline against the private data repository:
+
+```bash
+make pipeline
+```
+
+Override the data repository if required:
+
+```bash
+make pipeline DATA_ROOT=/path/to/kritva-forge-data
+```
+
 ## Source Header Validation
 
 ```bash
-python3 scripts/lint/check_source_headers.py --mode tracked --strict
+make headers
 ```
 
 

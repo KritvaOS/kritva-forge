@@ -3,7 +3,7 @@
 # SPDX-License-Identifier: Apache-2.0
 #
 # File        : fsm_coverage.py
-# Description : Fsm Coverage implementation
+# Description : Report FSM state-encoding coverage from normalized IR
 #
 # Component   : Kritva Forge
 # Module      : fsm
@@ -12,30 +12,57 @@
 # Author      : Kritva Forge Team
 # Created     : 02-10-2026
 # =============================================================================
+
+from __future__ import annotations
+
+import argparse
 import glob
+import os
+
 import yaml
 
-total = 0
-encoded = 0
 
-for fn in glob.glob("out/**/*.yaml", recursive=True):
-    try:
-        with open(fn) as f:
-            d = yaml.safe_load(f)
+def report(root: str) -> tuple[int, int]:
+    total = 0
+    encoded = 0
 
-        fsm = d.get("fsm", {})
-        if not fsm:
+    pattern = os.path.join(root, "**", "modules", "*.yaml")
+    for filename in glob.glob(pattern, recursive=True):
+        try:
+            with open(filename, encoding="utf-8") as handle:
+                data = yaml.safe_load(handle) or {}
+
+            fsm = data.get("fsm", {})
+            if not fsm:
+                continue
+
+            total += 1
+            if fsm.get("state_encoding", {}):
+                encoded += 1
+        except Exception:
             continue
 
-        total += 1
+    return total, encoded
 
-        se = fsm.get("state_encoding", {})
-        if se:
-            encoded += 1
 
-    except Exception:
-        pass
+def main() -> int:
+    parser = argparse.ArgumentParser(
+        description="Report FSM state-encoding coverage."
+    )
+    parser.add_argument(
+        "normalized_root",
+        nargs="?",
+        default="../kritva-forge-data/normalized/ir",
+        help="Normalized IR root.",
+    )
+    args = parser.parse_args()
 
-print(f"FSMs        : {total}")
-print(f"With Encoding: {encoded}")
-print(f"Coverage    : {100.0*encoded/max(total,1):.1f}%")
+    total, encoded = report(args.normalized_root)
+    print(f"FSMs         : {total}")
+    print(f"With Encoding: {encoded}")
+    print(f"Coverage     : {100.0 * encoded / max(total, 1):.1f}%")
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

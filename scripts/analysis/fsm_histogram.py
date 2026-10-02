@@ -1,3 +1,4 @@
+#!/usr/bin/env python3
 # =============================================================================
 # Copyright (c) 2026 KritvaOS
 # SPDX-License-Identifier: Apache-2.0
@@ -15,8 +16,6 @@
 # -----------------------------------------
 # Show FSM size distribution.
 # -----------------------------------------
-
-#!/usr/bin/env python3
 
 import os
 import yaml

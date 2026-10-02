@@ -20,7 +20,7 @@ PIP ?= $(PYTHON) -m pip
 # The public repository contains code only.  Runtime RTL and generated data
 # live in the sibling private repository by default.
 DATA_ROOT ?= ../kritva-forge-data
-DATA_DIR ?= $(DATA_ROOT)/raw/rtl
+DATA_DIR ?= $(DATA_ROOT)/raw/rtl/original
 NORMALIZED_DIR ?= $(DATA_ROOT)/normalized/ir
 PROMPT_DIR ?= $(DATA_ROOT)/generated/prompts
 REPORT_DIR ?= $(DATA_ROOT)/analysis/reports
@@ -41,7 +41,7 @@ help:
 	@echo ""
 	@echo "Private data repository:"
 	@echo "  DATA_ROOT=<path>       (default: ../kritva-forge-data)"
-	@echo "  DATA_DIR=<path>        RTL input (default: DATA_ROOT/raw/rtl)"
+	@echo "  DATA_DIR=<path>        RTL input (default: DATA_ROOT/raw/rtl/original)"
 	@echo "  NORMALIZED_DIR=<path>  normalized IR (default: DATA_ROOT/normalized/ir)"
 	@echo "  PROMPT_DIR=<path>      generated prompts (default: DATA_ROOT/generated/prompts)"
 	@echo "  REPORT_DIR=<path>      reports (default: DATA_ROOT/analysis/reports)"

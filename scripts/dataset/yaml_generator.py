@@ -1,3 +1,4 @@
+#!/usr/bin/env python3
 # =============================================================================
 # Copyright (c) 2026 KritvaOS
 # SPDX-License-Identifier: Apache-2.0
@@ -12,18 +13,12 @@
 # Author      : Kritva Forge Team
 # Created     : 02-10-2026
 # =============================================================================
-#--------------------------------------------------------------
-#     File        : yaml_generator
-#     Author      : Dinesh Annayya
-#     Date        :  6th June 2026
-#     Reference   : https://chatgpt.com/c/6a242fb9-bbcc-8323-b4c2-997a95fea512
 #     Purpose     : Convert module database into training artifacts.
 #                   hierarchy learning
 #                   SoC integration
 #                   top-level reconstruction
 #                  
-#--------------------------------------------------------------
-#!/usr/bin/env python3
+# =============================================================================
 
 import os
 import re
@@ -602,7 +597,16 @@ def write_ip_outputs(
         modules,
         top,
         out_root,
-        semantic_ctx=None,):
+        semantic_ctx=None,
+        prompt_root=None,
+    ):
+    """Write normalized module IR and generated prompts.
+
+    Module YAML/hierarchy artifacts stay under ``out_root``.  Prompts can be
+    redirected to the private data repository's ``generated/prompts`` tree.
+    ``prompt_root=None`` preserves the legacy co-located layout.
+    """
+
 
     ip_out = os.path.join(
         out_root,
@@ -614,10 +618,10 @@ def write_ip_outputs(
         "modules"
     )
 
-    prompts_dir = os.path.join(
-        ip_out,
-        "prompts"
-    )
+    if prompt_root is None:
+        prompts_dir = os.path.join(ip_out, "prompts")
+    else:
+        prompts_dir = os.path.join(prompt_root, ip_name)
 
 
     os.makedirs(

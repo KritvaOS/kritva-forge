@@ -14,10 +14,6 @@
 # Created     : 02-10-2026
 # =============================================================================
 #--------------------------------------------------------------
-#     File   : run_pipeline
-#     Author : Dinesh Annayya
-#     Date   :  6th June 2026
-#     Reference: https://chatgpt.com/c/6a242fb9-bbcc-8323-b4c2-997a95fea512
 #     Feature :
 #          ✓ files.f flow
 #          ✓ common library folder
@@ -61,7 +57,7 @@
 #                        ▼
 #                    LLM Fine-tuning
 #   Change History:
-#       <Rev0.1> <7June 2026><Dinesh Annayya> 
+#       <Rev0.1> <7June 2026>
 #           ✅ Skip common/
 #           ✅ Support filelist (files.f) flow
 #           ✅ Better logging
@@ -131,83 +127,60 @@ GENERATE_DATASETS = True
 ENABLE_SEMANTIC = True
 
 
+
 def discover_ips(rtl_root):
-    """
-    Discover RTL compilation units.
+    """Discover IP compilation units below ``rtl_root``.
 
-    If rtl_root itself contains files.f, treat it as a
-    single compilation unit. Otherwise discover child
-    directories as before.
+    A directory is an IP when it contains ``files.f`` or at least one
+    Verilog/SystemVerilog source file.  The root itself may also be one IP.
     """
 
-    if os.path.isfile(
-        os.path.join(rtl_root, "files.f")
-    ):
+    rtl_root = os.path.abspath(rtl_root)
+    if not os.path.isdir(rtl_root):
+        raise FileNotFoundError(f"RTL root does not exist: {rtl_root}")
+
+    def has_rtl(path):
+        if os.path.isfile(os.path.join(path, "files.f")):
+            return True
+        for name in os.listdir(path):
+            if name.lower().endswith((".v", ".sv")):
+                return True
+        return False
+
+    if has_rtl(rtl_root):
         return [rtl_root]
 
     ips = []
-
     for name in sorted(os.listdir(rtl_root)):
-
-        ip_dir = os.path.join(
-            rtl_root,
-            name
-        )
-
-        if not os.path.isdir(ip_dir):
+        if name.startswith(".") or name == "common":
             continue
-
-        ips.append(ip_dir)
+        ip_dir = os.path.join(rtl_root, name)
+        if os.path.isdir(ip_dir) and has_rtl(ip_dir):
+            ips.append(ip_dir)
 
     return ips
 
 
-def process_ip(
-        ip_dir,
-        out_root):
-    """
-    Process a single IP.
-    """
+def process_ip(ip_dir, normalized_root, prompt_root):
+    """Parse one IP and generate normalized IR plus prompts."""
 
-    ip_name = os.path.basename(
-        ip_dir
-    )
+    ip_name = os.path.basename(os.path.normpath(ip_dir))
 
-    print(
-        f"\n{'=' * 60}"
-    )
+    print(f"\n{'=' * 60}")
+    print(f"[INFO] Processing IP: {ip_name}")
+    print(f"{'=' * 60}")
 
-    print(
-        f"[INFO] Processing IP: "
-        f"{ip_name}"
-    )
+    modules, top = parse_ip(ip_dir)
 
-    print(
-        f"{'=' * 60}"
-    )
+    semantic_ctx = run_semantic(modules) if ENABLE_SEMANTIC else None
 
-    #
-    # Parse RTL
-    #
-    modules, top = parse_ip(
-        ip_dir
-    )
-
-    semantic_ctx = None
-    
-    if ENABLE_SEMANTIC:
-        semantic_ctx = run_semantic(modules)
-
-
-    #
-    # Generate YAML + prompts
-    #
     write_ip_outputs(
         ip_name,
         modules,
         top,
-        out_root,
+        normalized_root,
         semantic_ctx=semantic_ctx,
+        prompt_root=prompt_root,
     )
 
     return {
@@ -218,192 +191,201 @@ def process_ip(
     }
 
 
-def save_pipeline_stats(
-        results,
-        out_root):
-    """
-    Save pipeline statistics.
-    """
+def save_pipeline_stats(results, reports_root):
+    """Write pipeline summary under the private data repository."""
+
+    os.makedirs(reports_root, exist_ok=True)
 
     stats = {
-
-        "ips":
-
-            len(results),
-
-        "modules":
-
-            sum(
-                r["modules"]
-                for r in results
-            ),
-
-        "top_modules": {
-
-            r["ip"]:
-            r["top"]
-
-            for r in results
-        }
+        "pipeline_version": "v2",
+        "ips": len(results),
+        "modules": sum(r["modules"] for r in results),
+        "top_modules": {r["ip"]: r["top"] for r in results},
     }
 
-    with open(
-        os.path.join(
-            out_root,
-            "pipeline_stats.json"
-        ),
-        "w",
-        encoding="utf-8"
-    ) as f:
+    path = os.path.join(reports_root, "pipeline_stats.json")
+    with open(path, "w", encoding="utf-8") as f:
+        json.dump(stats, f, indent=2)
 
-        json.dump(
-            stats,
-            f,
-            indent=2
-        )
+    return path
 
 
-def print_pipeline_summary(
-        results):
-    """
-    Print final summary.
-    """
-
-    print(
-        "\n"
-        + "=" * 60
-    )
-
-    print(
-        "PIPELINE SUMMARY"
-    )
-
-    print(
-        "=" * 60
-    )
-
-    print(
-        f"IPs processed : "
-        f"{len(results)}"
-    )
-
-    print(
-        f"Modules       : "
-        f"{sum(r['modules'] for r in results)}"
-    )
-
-    print(
-        "\nTop Modules:"
-    )
-
-    for r in results:
-
-        print(
-            f"  {r['ip']:20s}"
-            f" -> "
-            f"{r['top']}"
-        )
+def print_pipeline_summary(results):
+    print("\n" + "=" * 60)
+    print("PIPELINE SUMMARY")
+    print("=" * 60)
+    print(f"IPs processed : {len(results)}")
+    print(f"Modules       : {sum(r['modules'] for r in results)}")
+    print("\nTop Modules:")
+    for result in results:
+        print(f"  {result['ip']:20s} -> {result['top']}")
 
 
 def run_pipeline(
         rtl_root,
-        out_root):
+        normalized_root,
+        datasets_root=None,
+        reports_root=None,
+        prompt_root=None,
+        curated_root=None):
+    """Run the complete Forge RTL analysis pipeline.
+
+    ``normalized_root`` contains module YAML/hierarchy artifacts.
+    Prompts, reports, and datasets are kept in their dedicated data-repository
+    locations when those paths are supplied.
     """
-    Run complete pipeline.
-    """
 
-    os.makedirs(
-        out_root,
-        exist_ok=True
-    )
+    normalized_root = os.path.abspath(normalized_root)
+    if prompt_root is None:
+        prompt_root = os.path.join(normalized_root, "prompts")
+    if datasets_root is None:
+        datasets_root = os.path.join(normalized_root, "datasets")
+    if reports_root is None:
+        reports_root = os.path.join(normalized_root, "reports")
 
-    ips = discover_ips(
-        rtl_root
-    )
+    for path in (normalized_root, prompt_root, datasets_root, reports_root):
+        os.makedirs(path, exist_ok=True)
 
-    print(
-        f"[INFO] Found "
-        f"{len(ips)} IPs"
-    )
+    ips = discover_ips(rtl_root)
+    print(f"[INFO] Found {len(ips)} IPs")
+
+    if not ips:
+        raise RuntimeError(f"No RTL IPs found under {os.path.abspath(rtl_root)}")
 
     results = []
-
     for ip_dir in ips:
-
         try:
-
-            result = process_ip(
-                ip_dir,
-                out_root
-            )
-
             results.append(
-                result
+                process_ip(
+                    ip_dir,
+                    normalized_root,
+                    prompt_root,
+                )
             )
-        except Exception as e:
-
+        except Exception as exc:
             print("\n" + "=" * 80)
             print("[PIPELINE ERROR]")
             print("IP Directory :", ip_dir)
-            print("Exception    :", type(e).__name__)
-            print("Message      :", e)
+            print("Exception    :", type(exc).__name__)
+            print("Message      :", exc)
             print("-" * 80)
-
             traceback.print_exc()
-
             print("=" * 80)
-
             raise
 
+    stats_path = save_pipeline_stats(results, reports_root)
+    print(f"[INFO] Pipeline statistics: {stats_path}")
 
-    #
-    # Save stats
-    #
-    save_pipeline_stats(
-        results,
-        out_root
-    )
-
-    #
-    # Generate datasets
-    #
     if GENERATE_DATASETS:
+        print("\n" + "=" * 60)
+        print("[INFO] Generating datasets")
+        print("=" * 60)
 
-        print(
-            "\n"
-            + "=" * 60
+        generate_datasets(
+            normalized_root,
+            datasets_root,
+            prompt_root=prompt_root,
+            curated_root=curated_root,
         )
 
-        print(
-            "[INFO] Generating datasets"
-        )
-
-        print(
-            "=" * 60
-        )
-
-        generate_datasets( out_root, os.path.join( out_root, "datasets"))
-
-    print_pipeline_summary( results)
-
+    print_pipeline_summary(results)
     print_summary()
-
     return results
 
 
+def parse_args():
+    import argparse
+
+    parser = argparse.ArgumentParser(
+        description="Run the Kritva Forge RTL analysis pipeline."
+    )
+    parser.add_argument(
+        "legacy_rtl_root",
+        nargs="?",
+        help="RTL/IP root. Legacy positional interface.",
+    )
+    
+    parser.add_argument(
+        "legacy_out_root",
+        nargs="?",
+        help="Normalized IR output root. Legacy positional interface.",
+    )
+
+    parser.add_argument(
+        "--data-root",
+        help="Private kritva-forge-data repository root.",
+    )
+    parser.add_argument(
+        "--rtl-root",
+        help="Override RTL input root; defaults to <data-root>/raw/rtl/original.",
+    )
+    parser.add_argument(
+        "--normalized-root",
+        help="Override <data-root>/normalized/ir.",
+    )
+    parser.add_argument(
+        "--datasets-root",
+        help="Override <data-root>/datasets/pipeline.",
+    )
+    parser.add_argument(
+        "--reports-root",
+        help="Override <data-root>/analysis/reports.",
+    )
+    parser.add_argument(
+        "--prompt-root",
+        help="Override <data-root>/generated/prompts.",
+    )
+    parser.add_argument(
+        "--curated-root",
+        help="Optional curated prompt/RTL root.",
+    )
+    return parser.parse_args()
+
+
 def main():
+    args = parse_args()
 
-    if len(sys.argv) != 3:
-        print( "\nUsage:\n")
-        print( "python " "scripts/run_pipeline.py " "<rtl_root> " "<out_root>\n")
-        sys.exit(1)
+    if args.data_root:
+        from scripts.core.paths import ForgeDataPaths
 
-    rtl_root = sys.argv[1]
-    out_root = sys.argv[2]
+        data = ForgeDataPaths.from_root(args.data_root)
+        rtl_root = args.rtl_root or str(data.raw_rtl / "original")
+        normalized_root = args.normalized_root or str(data.normalized_ir)
+        datasets_root = args.datasets_root or str(data.pipeline_datasets)
+        reports_root = args.reports_root or str(data.reports)
+        prompt_root = args.prompt_root or str(data.prompts)
+    else:
+        if args.legacy_out_root is None and args.rtl_root is None:
+            print(
+                "Usage: python -m scripts.pipeline.run_pipeline "
+                "--data-root ../kritva-forge-data"
+            )
+            print(
+                "   or: python -m scripts.pipeline.run_pipeline "
+                "<rtl_root> <normalized_root>"
+            )
+            sys.exit(1)
+    
+        rtl_root = args.rtl_root or args.legacy_rtl_root
+        normalized_root = args.normalized_root or args.legacy_out_root
+
+
+
+        if not rtl_root or not normalized_root:
+            print("Both rtl_root and normalized_root are required.")
+            sys.exit(1)
+
+        datasets_root = args.datasets_root
+        reports_root = args.reports_root
+        prompt_root = args.prompt_root
 
     run_pipeline(
         rtl_root,
-        out_root
+        normalized_root,
+        datasets_root=datasets_root,
+        reports_root=reports_root,
+        prompt_root=prompt_root,
+        curated_root=args.curated_root,
     )
 
 

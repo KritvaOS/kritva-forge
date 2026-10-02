@@ -1,3 +1,4 @@
+#!/usr/bin/env python3
 # =============================================================================
 # Copyright (c) 2026 KritvaOS
 # SPDX-License-Identifier: Apache-2.0
@@ -16,7 +17,6 @@
 # Measure value delivered by
 # typedef / parameter / localparam / literal FSM extraction.
 # ----------------------------------------------------------
-#!/usr/bin/env python3
 
 import os
 import yaml

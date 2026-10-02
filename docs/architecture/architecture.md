@@ -134,3 +134,29 @@ Kritva Forge ─── Hardware Design Intelligence
 ## 9. Long-Term Direction
 
 The long-term goal is to turn RTL from source code into structured, queryable, machine-understandable hardware design knowledge, supporting analysis, verification, and AI-assisted hardware design.
+
+
+## Data Repository Boundary
+
+Kritva Forge keeps executable tooling in the public repository and RTL/data in
+the private `kritva-forge-data` repository.
+
+```text
+kritva-forge
+    |
+    | parse/analyze/generate
+    v
+kritva-forge-data
+    raw/rtl
+       |
+       v
+    normalized/ir
+       |
+       +--> analysis/reports
+       +--> generated/prompts
+       +--> datasets/pipeline
+       +--> golden
+```
+
+The pipeline accepts explicit roots so that no source code depends on a local
+`data/raw_rtl`, `data/curated`, or `out` directory.
