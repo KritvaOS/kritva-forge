@@ -72,12 +72,17 @@ from scripts.dataset.leakage import (
     compute_identities,
     format_report,
 )
+from scripts.core.provenance import (
+    record_provenance,
+    sha256_file,
+)
 from scripts.core.paths import (
     ForgeDataPaths,
     infer_data_root,
     iter_ip_dirs,
     iter_module_yamls,
     resolve_provenance_path,
+    to_provenance_path,
 )
 
 TRAIN_RATIO = 0.70
@@ -365,6 +370,14 @@ def compute_rtl_stats(
             
             }
 
+def _is_within(path, root):
+    try:
+        to_provenance_path(path, root)
+        return True
+    except ValueError:
+        return False
+
+
 def load_text(path):
 
     with open(
@@ -611,6 +624,8 @@ def build_examples_from_ip(
         rtl_file = spec.get(
             "source_file"
         )
+        source_rel = rtl_file
+        data_root = infer_data_root(ip_dir)
 
         #
         # KF-DQ-002: persisted provenance is repository-relative
@@ -618,7 +633,6 @@ def build_examples_from_ip(
         # contains this IR tree.
         #
         if rtl_file and not os.path.isabs(rtl_file):
-            data_root = infer_data_root(ip_dir)
             if data_root is not None:
                 rtl_file = str(
                     resolve_provenance_path(rtl_file, data_root)
@@ -702,6 +716,37 @@ def build_examples_from_ip(
         )
         source_text = rtl
 
+        #
+        # KF-DQ-005: provenance of every record from this module.
+        # The source is always the IR's original RTL; curated RTL (if used
+        # as the completion) is recorded as a separate artifact.
+        #
+        yaml_abs = os.path.join(modules_dir, yaml_file)
+        if data_root is not None and source_rel and not os.path.isabs(source_rel):
+            source_abs = str(resolve_provenance_path(source_rel, data_root))
+            ir_rel = to_provenance_path(yaml_abs, data_root)
+        else:
+            source_abs = rtl_file if not curated_rtl else None
+            ir_rel = None
+        provenance_args = {
+            "source_path": source_rel,
+            "source_sha256": sha256_file(source_abs) if source_abs and os.path.exists(source_abs) else None,
+            "ir_path": ir_rel,
+            "ir_sha256": sha256_file(yaml_abs),
+            "generated_artifact": (
+                {
+                    "type": "curated",
+                    "path": (
+                        to_provenance_path(curated_rtl, data_root)
+                        if data_root is not None and _is_within(curated_rtl, data_root)
+                        else os.path.basename(curated_rtl)
+                    ),
+                    "sha256": sha256_file(curated_rtl),
+                }
+                if curated_rtl else None
+            ),
+        }
+
         if not USE_COMMENTS:
             rtl = strip_comments(
                 rtl
@@ -740,10 +785,12 @@ def build_examples_from_ip(
                     if curated_prompt
                     else "generated",
             
+                # KF-DQ-005: the completion is the original RTL unless a
+                # curated RTL file replaced it (was mislabelled "generated").
                 "rtl_source":
                     "curated"
                     if curated_rtl
-                    else "generated",
+                    else "original",
             
                 "task":
                     task_type,
@@ -771,6 +818,11 @@ def build_examples_from_ip(
                 "completion":
                     rtl
             })
+
+            examples[-1]["provenance"] = record_provenance(
+                examples[-1],
+                **provenance_args,
+            )
 
             # KF-DQ-004: leakage identities (internal; not written to jsonl)
             examples[-1]["_leakage"] = compute_identities(

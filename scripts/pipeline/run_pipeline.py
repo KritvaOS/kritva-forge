@@ -285,6 +285,22 @@ def check_portable_provenance(roots):
         )
 
 
+def write_provenance(data_root):
+    """Write manifests/provenance_manifest.json and its validation report (KF-DQ-005)."""
+    from scripts.core.provenance import (
+        check_provenance,
+        format_report,
+        write_manifest,
+        write_report,
+    )
+
+    write_manifest(data_root)
+    report = check_provenance(data_root)
+    write_report(data_root, report)
+    print(format_report(report))
+    return report
+
+
 def run_pipeline(
         rtl_root,
         normalized_root,
@@ -387,8 +403,19 @@ def run_pipeline(
             reports_root=reports_root,
         )
 
+        #
+        # KF-DQ-005: canonical RTL provenance manifest + validation.
+        #
+        provenance_report = write_provenance(data_root)
+        if provenance_report["status"] != "PASS":
+            raise RuntimeError(
+                "provenance check failed (KF-DQ-005): "
+                + "; ".join(provenance_report["problems"][:10])
+            )
+
     check_portable_provenance(
-        [normalized_root, prompt_root, reports_root, datasets_root, splits_root]
+        [normalized_root, prompt_root, reports_root, datasets_root, splits_root,
+         str(ForgeDataPaths.from_root(data_root).manifests)]
     )
     print("[INFO] Portable provenance OK (no absolute host paths)")
 
