@@ -113,6 +113,7 @@ from scripts.parser.ast_utils import walk_ast,derive_parameter_group,evaluate_co
 
 from pyslang import SourceManager
 
+from scripts.core.identity import SourceIdentity, node_identity
 from scripts.core.paths import infer_data_root, to_provenance_path
 
 from scripts.parser.expression_parser import (
@@ -176,15 +177,39 @@ def extract_implicit_signals(module, rtl_path):
     return signals
 
 
+# --------------------------------------------------
+# Stable node identity (KF-DQ-003)
+#
+# node_id and buffer are content-derived and portable; see
+# scripts/core/identity.py for the documented, versioned identity model.
+# The active SourceIdentity is installed by parse_file() for the duration of
+# one file's extraction.
+# --------------------------------------------------
+
+_SOURCE_IDENTITY = None
+
+
+def _set_source_identity(source_identity):
+    global _SOURCE_IDENTITY
+    previous = _SOURCE_IDENTITY
+    _SOURCE_IDENTITY = source_identity
+    return previous
+
+
 def get_source_location(node):
 
     try:
 
         loc = node.sourceRange.start
 
+        if _SOURCE_IDENTITY is not None:
+            buffer = _SOURCE_IDENTITY.buffer_file(loc)
+        else:
+            buffer = ""
+
         return {
             "offset": getattr(loc, "offset", -1),
-            "buffer": str(getattr(loc, "buffer", ""))
+            "buffer": buffer
         }
 
     except Exception:
@@ -193,6 +218,32 @@ def get_source_location(node):
             "offset": -1,
             "buffer": ""
         }
+
+
+def stable_node_id(node, rtl_path):
+    """Deterministic content identity of ``node`` (KF-DQ-003)."""
+
+    if _SOURCE_IDENTITY is None:
+        start_key = end_key = ""
+        try:
+            start_key = str(node.sourceRange.start.offset)
+            end_key = str(node.sourceRange.end.offset)
+        except Exception:
+            pass
+    else:
+        try:
+            source_range = node.sourceRange
+            start_key = _SOURCE_IDENTITY.location_key(source_range.start)
+            end_key = _SOURCE_IDENTITY.location_key(source_range.end)
+        except Exception:
+            start_key = end_key = ""
+
+    return node_identity(
+        str(rtl_path),
+        type(node).__name__,
+        start_key,
+        end_key,
+    )
 
 
 def node_info(node, rtl_path):
@@ -209,7 +260,7 @@ def node_info(node, rtl_path):
 
     info = {
 
-        "node_id": NODE_REGISTRY.register(node),
+        "node_id": stable_node_id(node, rtl_path),
         "syntax_type": type(node).__name__ ,
         "source_file": rtl_path,
 
@@ -218,35 +269,6 @@ def node_info(node, rtl_path):
     }
 
     return info
-
-# ----------------------------------
-# Add a node registry
-# ---------------------------------
-
-class NodeRegistry:
-
-    def __init__(self):
-        self.next_id = 1
-        self.node_map = {}
-        self.reverse_map = {}
-
-    def register(self, node):
-
-        key = id(node)
-
-        if key in self.node_map:
-            return self.node_map[key]
-
-        node_id = self.next_id
-        self.next_id += 1
-
-        self.node_map[key] = node_id
-        self.reverse_map[node_id] = node
-
-        return node_id
-
-
-NODE_REGISTRY = NodeRegistry()
 
 # ------------------------------------------
 #
@@ -1206,13 +1228,14 @@ def collect_rtl_files(ip_dir):
 from pyslang.syntax import SyntaxTree
 
 
-def parse_file(path, include_dirs=None, source_file=None):
+def parse_file(path, include_dirs=None, source_file=None, data_root=None):
     """Parse one RTL file.
 
     ``path`` is the runtime filesystem path used to read the file.
     ``source_file`` is the provenance recorded in every IR node
     (KF-DQ-002: repository-relative, e.g. ``raw/rtl/original/uart/uart_tx.v``).
     Defaults to ``path`` for ad-hoc/debug use.
+    ``data_root`` makes buffer identities repository-relative (KF-DQ-003).
     """
 
     provenance = source_file if source_file is not None else path
@@ -1231,6 +1254,30 @@ def parse_file(path, include_dirs=None, source_file=None):
         )
     else:
         tree = SyntaxTree.fromFile(path)
+
+    previous_identity = _set_source_identity(
+        SourceIdentity(
+            tree.sourceManager,
+            lambda p: _portable_path(p, data_root),
+        )
+    )
+    try:
+        return _extract_file_modules(tree, path, provenance)
+    finally:
+        _set_source_identity(previous_identity)
+
+
+def _portable_path(path, data_root):
+    """Repository-relative form of ``path`` for identity (absolute if no data root)."""
+    if data_root is None:
+        return path
+    try:
+        return to_provenance_path(path, data_root)
+    except ValueError:
+        return os.path.basename(path)
+
+
+def _extract_file_modules(tree, path, provenance):
 
     modules = {}
 
@@ -2237,6 +2284,7 @@ def parse_ip(ip_dir, data_root=None):
                     if data_root is not None
                     else None
                 ),
+                data_root=data_root,
             )
     
             #

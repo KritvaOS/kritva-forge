@@ -25,6 +25,7 @@ import re
 import yaml
 import shutil
 
+from scripts.core.identity import IDENTITY_VERSION
 from scripts.core.paths import find_absolute_paths
 
 
@@ -215,6 +216,11 @@ def build_module_yaml(
         
         "parser_version":
             mod.get("parser_version"),
+
+        # KF-DQ-003: version of the node_id / buffer identity model
+        # (scripts/core/identity.py).
+        "identity_version":
+            IDENTITY_VERSION,
         
         "type":
             mod.get("type"),
