@@ -60,12 +60,20 @@
 
 import os
 import json
-import random
 import yaml
 import re
 import hashlib
 
+from scripts.dataset.leakage import (
+    SPLITS,
+    assign_splits,
+    build_manifest,
+    check_leakage,
+    compute_identities,
+    format_report,
+)
 from scripts.core.paths import (
+    ForgeDataPaths,
     infer_data_root,
     iter_ip_dirs,
     iter_module_yamls,
@@ -76,7 +84,6 @@ TRAIN_RATIO = 0.70
 VALID_RATIO = 0.15
 TEST_RATIO  = 0.15
 
-RANDOM_SEED = 42
 
 USE_COMMENTS = True
 
@@ -520,59 +527,6 @@ def discover_ips(yaml_root):
     return ips
 
 # --------------------------------------------------
-# Split IPs
-# --------------------------------------------------
-
-def split_ips(
-        ip_dirs):
-
-    random.seed(
-        RANDOM_SEED
-    )
-
-    ip_dirs = list(
-        ip_dirs
-    )
-
-    random.shuffle(
-        ip_dirs
-    )
-
-    n = len(
-        ip_dirs
-    )
-
-    train_end = int(
-        n * TRAIN_RATIO
-    )
-
-    valid_end = int(
-        n * (
-            TRAIN_RATIO +
-            VALID_RATIO
-        )
-    )
-
-    train_ips = ip_dirs[
-        :train_end
-    ]
-
-    valid_ips = ip_dirs[
-        train_end:valid_end
-    ]
-
-    test_ips = ip_dirs[
-        valid_end:
-    ]
-
-    return (
-        train_ips,
-        valid_ips,
-        test_ips
-    )
-
-
-# --------------------------------------------------
 # Locate RTL
 # --------------------------------------------------
 
@@ -746,6 +700,7 @@ def build_examples_from_ip(
         rtl = load_text(
             rtl_file
         )
+        source_text = rtl
 
         if not USE_COMMENTS:
             rtl = strip_comments(
@@ -816,6 +771,13 @@ def build_examples_from_ip(
                 "completion":
                     rtl
             })
+
+            # KF-DQ-004: leakage identities (internal; not written to jsonl)
+            examples[-1]["_leakage"] = compute_identities(
+                examples[-1],
+                spec,
+                source_text,
+            )
 
 
     return examples
@@ -1023,7 +985,9 @@ def generate_datasets(
         yaml_root,
         out_dir,
         prompt_root=None,
-        curated_root=None):
+        curated_root=None,
+        splits_root=None,
+        reports_root=None):
 
     os.makedirs(
         out_dir,
@@ -1048,44 +1012,86 @@ def generate_datasets(
         f"{len(ip_dirs)} IPs"
     )
 
-    train_ips, \
-    valid_ips, \
-    test_ips = split_ips(
-        ip_dirs
-    )
-
-    print(
-        f"[INFO] Train IPs      : "
-        f"{len(train_ips)}"
-    )
-
-    print(
-        f"[INFO] Validation IPs : "
-        f"{len(valid_ips)}"
-    )
-
-    print(
-        f"[INFO] Test IPs       : "
-        f"{len(test_ips)}"
-    )
-
-    train = build_dataset(
-        train_ips,
+    #
+    # KF-DQ-004: leakage-safe deterministic split.
+    # Build every example (IPs in sorted order), group records that share
+    # any hard content identity, and assign groups atomically
+    # (scripts/dataset/leakage.py documents the policy).
+    #
+    candidates = build_dataset(
+        ip_dirs,
         prompt_root=prompt_root,
         curated_root=curated_root
     )
 
-    validation = build_dataset(
-        valid_ips,
-        prompt_root=prompt_root,
-        curated_root=curated_root
+    identities = [
+        ex["_leakage"]
+        for ex in candidates
+    ]
+
+    assignment, groups = assign_splits(
+        identities
     )
 
-    test = build_dataset(
-        test_ips,
-        prompt_root=prompt_root,
-        curated_root=curated_root
+    by_split = {
+        split: [
+            ex
+            for ex in candidates
+            if assignment[ex["_leakage"]["record_id"]] == split
+        ]
+        for split in SPLITS
+    }
+
+    train = by_split["train"]
+    validation = by_split["validation"]
+    test = by_split["test"]
+
+    split_manifest = build_manifest(
+        candidates,
+        identities,
+        assignment,
+        groups
     )
+
+    leakage_report = check_leakage(
+        {
+            split: [ex["_leakage"] for ex in by_split[split]]
+            for split in SPLITS
+        },
+        split_manifest
+    )
+
+    print(format_report(leakage_report))
+
+    for ex in candidates:
+        ex.pop("_leakage", None)
+
+    if splits_root is None or reports_root is None:
+        data_root = infer_data_root(yaml_root)
+        if data_root is not None:
+            data = ForgeDataPaths.from_root(data_root)
+            splits_root = splits_root or str(data.splits)
+            reports_root = reports_root or str(data.reports)
+
+    if splits_root:
+        os.makedirs(splits_root, exist_ok=True)
+        save_json(
+            split_manifest,
+            os.path.join(splits_root, "split_manifest.json")
+        )
+
+    if reports_root:
+        os.makedirs(reports_root, exist_ok=True)
+        save_json(
+            leakage_report,
+            os.path.join(reports_root, "split_leakage_report.json")
+        )
+
+    if leakage_report["status"] != "PASS":
+        raise RuntimeError(
+            "split leakage check failed (KF-DQ-004): "
+            + "; ".join(leakage_report["problems"])
+        )
 
     all_examples = (
         train

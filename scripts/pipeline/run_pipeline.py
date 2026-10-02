@@ -336,6 +336,8 @@ def run_pipeline(
             "repository-relative (KF-DQ-002)"
         )
     data_root = os.path.abspath(data_root)
+    # KF-DQ-004: split manifest lives in <data-root>/splits.
+    splits_root = str(ForgeDataPaths.from_root(data_root).splits)
     print("[INFO] Provenance     : repository-relative (raw/rtl/...)")
 
     ips = discover_ips(rtl_root)
@@ -381,10 +383,12 @@ def run_pipeline(
             datasets_root,
             prompt_root=prompt_root,
             curated_root=curated_root,
+            splits_root=splits_root,
+            reports_root=reports_root,
         )
 
     check_portable_provenance(
-        [normalized_root, prompt_root, reports_root, datasets_root]
+        [normalized_root, prompt_root, reports_root, datasets_root, splits_root]
     )
     print("[INFO] Portable provenance OK (no absolute host paths)")
 

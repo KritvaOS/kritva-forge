@@ -28,7 +28,7 @@ DATASET_DIR ?= $(DATA_ROOT)/datasets/pipeline
 CURATED_DIR ?=
 PROJECT ?= $(NORMALIZED_DIR)
 
-.PHONY: help venv setup test test-data check-layout compile pipeline headers clean
+.PHONY: help venv setup test test-data check-layout check-leakage data-quality compile pipeline headers git_sync clean
 
 help:
 	@echo "Kritva Forge targets:"
@@ -36,10 +36,13 @@ help:
 	@echo "  make test        - run unit tests"
 	@echo "  make test-data   - run data-repository invariant tests (needs DATA_ROOT)"
 	@echo "  make check-layout - fail if non-canonical module YAMLs exist in NORMALIZED_DIR"
+	@echo "  make check-leakage - fail if dataset splits leak (needs DATA_ROOT)"
+	@echo "  make data-quality - test-data + check-layout + check-leakage"
 	@echo "  make compile     - syntax-check Python sources"
 	@echo "  make headers     - validate KritvaOS source headers"
 	@echo "  make pipeline    - parse RTL and generate normalized IR/datasets"
 	@echo "  make clean       - remove local Python/test caches only"
+	@echo "  make git_sync    - sync git repo to main"
 	@echo ""
 	@echo "Private data repository:"
 	@echo "  DATA_ROOT=<path>       (default: ../kritva-forge-data)"
@@ -70,6 +73,11 @@ test-data: setup
 check-layout: setup
 	PYTHONPATH=. $(PYTHON) -c "import sys; from scripts.pipeline.run_pipeline import check_canonical_layout; check_canonical_layout(sys.argv[1]); print('[INFO] Canonical IR layout OK:', sys.argv[1])" "$(NORMALIZED_DIR)"
 
+check-leakage: setup
+	PYTHONPATH=. $(PYTHON) scripts/dataset/leakage.py --data-root "$(DATA_ROOT)"
+
+data-quality: test-data check-layout check-leakage
+
 headers:
 	python3 scripts/lint/check_source_headers.py --mode tracked --strict
 	python3 tests/lint/test_source_headers.py
@@ -81,6 +89,12 @@ pipeline: setup
 	@echo "[INFO] Reports        : $(REPORT_DIR)"
 	@echo "[INFO] Datasets       : $(DATASET_DIR)"
 	PYTHONPATH=. $(PYTHON) -m scripts.pipeline.run_pipeline 		--rtl-root "$(DATA_DIR)" 		--normalized-root "$(NORMALIZED_DIR)" 		--prompt-root "$(PROMPT_DIR)" 		--reports-root "$(REPORT_DIR)" 		--datasets-root "$(DATASET_DIR)" 		$(if $(CURATED_DIR),--curated-root "$(CURATED_DIR)",)
+
+# Sync git repo to back to main
+git_sync:
+	git switch main
+	git pull --ff-only origin main
+	git log --oneline -3
 
 clean:
 	rm -rf __pycache__ scripts/**/__pycache__ tests/**/__pycache__ .pytest_cache
