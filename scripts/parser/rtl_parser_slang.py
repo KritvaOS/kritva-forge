@@ -113,6 +113,8 @@ from scripts.parser.ast_utils import walk_ast,derive_parameter_group,evaluate_co
 
 from pyslang import SourceManager
 
+from scripts.core.paths import infer_data_root, to_provenance_path
+
 from scripts.parser.expression_parser import (
     parse_expression,
     parse_identifier,
@@ -1204,7 +1206,16 @@ def collect_rtl_files(ip_dir):
 from pyslang.syntax import SyntaxTree
 
 
-def parse_file(path, include_dirs=None):
+def parse_file(path, include_dirs=None, source_file=None):
+    """Parse one RTL file.
+
+    ``path`` is the runtime filesystem path used to read the file.
+    ``source_file`` is the provenance recorded in every IR node
+    (KF-DQ-002: repository-relative, e.g. ``raw/rtl/original/uart/uart_tx.v``).
+    Defaults to ``path`` for ad-hoc/debug use.
+    """
+
+    provenance = source_file if source_file is not None else path
 
     if include_dirs:
         source_manager = SourceManager()
@@ -1235,8 +1246,12 @@ def parse_file(path, include_dirs=None):
 
         mod = extract_module(
             member,
-            path
+            provenance
         )
+
+        # Runtime-only absolute location (never persisted); used to read or
+        # copy the RTL file during this pipeline run.
+        mod["source_path"] = os.path.abspath(path)
 
         mod["compilation_declarations"] = (
             compilation_declarations
@@ -2176,7 +2191,18 @@ def build_graph(modules):
 # PARSE IP
 # --------------------------------------------------
 
-def parse_ip(ip_dir):
+def parse_ip(ip_dir, data_root=None):
+    """Parse all RTL of one IP.
+
+    KF-DQ-002: node/module ``source_file`` provenance is recorded relative to
+    the data-repository root (``raw/rtl/original/...``).  ``data_root`` is
+    inferred from ``ip_dir`` when not given; if it cannot be determined
+    (ad-hoc debug runs outside a data repository) absolute paths are kept and
+    the writers refuse to persist them.
+    """
+
+    if data_root is None:
+        data_root = infer_data_root(ip_dir)
 
     rtl_files, include_dirs = collect_filelist_info(ip_dir)
 
@@ -2205,7 +2231,12 @@ def parse_ip(ip_dir):
     
             file_modules = parse_file(
                 rtl,
-                include_dirs
+                include_dirs,
+                source_file=(
+                    to_provenance_path(rtl, data_root)
+                    if data_root is not None
+                    else None
+                ),
             )
     
             #

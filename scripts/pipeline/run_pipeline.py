@@ -98,6 +98,14 @@ import os
 import sys
 import traceback
 
+# Allow ``python scripts/pipeline/run_pipeline.py`` (script mode) in addition
+# to ``python -m scripts.pipeline.run_pipeline``.
+if __package__ in (None, ""):
+    sys.path.insert(
+        0,
+        os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))),
+    )
+
 from scripts.parser.rtl_parser_slang import parse_ip
 from scripts.dataset.yaml_generator import write_ip_outputs
 from scripts.dataset.dataset_generator import generate_datasets
@@ -107,7 +115,12 @@ from scripts.pipeline.run_semantic import run_semantic
 import logging
 from pathlib import Path
 
-from scripts.core.paths import ForgeDataPaths, find_noncanonical_module_yamls
+from scripts.core.paths import (
+    ForgeDataPaths,
+    find_noncanonical_module_yamls,
+    infer_data_root,
+    scan_absolute_paths,
+)
 
 logging.basicConfig(
     level=logging.INFO,
@@ -153,7 +166,7 @@ def discover_ips(rtl_root):
     return ips
 
 
-def process_ip(ip_dir, normalized_root, prompt_root):
+def process_ip(ip_dir, normalized_root, prompt_root, data_root=None):
     """Parse one IP and generate normalized IR plus prompts."""
 
     ip_name = os.path.basename(os.path.normpath(ip_dir))
@@ -162,7 +175,7 @@ def process_ip(ip_dir, normalized_root, prompt_root):
     print(f"[INFO] Processing IP: {ip_name}")
     print(f"{'=' * 60}")
 
-    modules, top = parse_ip(ip_dir)
+    modules, top = parse_ip(ip_dir, data_root=data_root)
 
     semantic_ctx = run_semantic(modules) if ENABLE_SEMANTIC else None
 
@@ -257,13 +270,29 @@ def check_canonical_layout(normalized_root):
         )
 
 
+def check_portable_provenance(roots):
+    """Fail if any artifact under ``roots`` contains an absolute host path (KF-DQ-002)."""
+    findings = scan_absolute_paths(roots)
+    if findings:
+        sample = "\n  ".join(
+            f"{path}:{line_no}: {line.strip()[:120]}"
+            for path, line_no, line in findings[:10]
+        )
+        raise RuntimeError(
+            f"{len(findings)} absolute host path(s) found in persisted "
+            f"artifacts; provenance must be repository-relative (KF-DQ-002). "
+            f"First entries:\n  {sample}"
+        )
+
+
 def run_pipeline(
         rtl_root,
         normalized_root,
         datasets_root=None,
         reports_root=None,
         prompt_root=None,
-        curated_root=None):
+        curated_root=None,
+        data_root=None):
     """Run the complete Forge RTL analysis pipeline.
 
     ``normalized_root`` contains only canonical IR:
@@ -271,6 +300,9 @@ def run_pipeline(
     Prompts, reports, and datasets go to their dedicated data-repository
     locations (see ``default_output_roots``) and never inside
     ``normalized_root``.
+
+    ``data_root`` is the data-repository root used for portable provenance
+    (``raw/rtl/original/...``); it is inferred from ``rtl_root`` if omitted.
     """
 
     normalized_root = os.path.abspath(normalized_root)
@@ -295,6 +327,17 @@ def run_pipeline(
     for path in (normalized_root, prompt_root, datasets_root, reports_root):
         os.makedirs(path, exist_ok=True)
 
+    if data_root is None:
+        data_root = infer_data_root(rtl_root)
+    if data_root is None:
+        raise ValueError(
+            f"cannot determine the data-repository root for {rtl_root}; "
+            "pass data_root/--data-root so provenance can be recorded "
+            "repository-relative (KF-DQ-002)"
+        )
+    data_root = os.path.abspath(data_root)
+    print("[INFO] Provenance     : repository-relative (raw/rtl/...)")
+
     ips = discover_ips(rtl_root)
     print(f"[INFO] Found {len(ips)} IPs")
 
@@ -309,6 +352,7 @@ def run_pipeline(
                     ip_dir,
                     normalized_root,
                     prompt_root,
+                    data_root=data_root,
                 )
             )
         except Exception as exc:
@@ -338,6 +382,11 @@ def run_pipeline(
             prompt_root=prompt_root,
             curated_root=curated_root,
         )
+
+    check_portable_provenance(
+        [normalized_root, prompt_root, reports_root, datasets_root]
+    )
+    print("[INFO] Portable provenance OK (no absolute host paths)")
 
     print_pipeline_summary(results)
     print_summary()
@@ -435,6 +484,7 @@ def main():
         reports_root=reports_root,
         prompt_root=prompt_root,
         curated_root=args.curated_root,
+        data_root=args.data_root,
     )
 
 

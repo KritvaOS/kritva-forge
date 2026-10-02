@@ -45,7 +45,11 @@ import shutil
 import yaml
 from collections import defaultdict
 
-from scripts.core.paths import iter_module_yamls
+from scripts.core.paths import (
+    infer_data_root,
+    iter_module_yamls,
+    resolve_provenance_path,
+)
 
 
 CURATED_ROOT = os.environ.get("KRITVA_FORGE_CURATED_ROOT", "")
@@ -227,6 +231,14 @@ def process_ip(
         rtl_src = spec.get(
             "source_file"
         )
+
+        # KF-DQ-002: resolve repository-relative provenance.
+        if rtl_src and not os.path.isabs(rtl_src):
+            data_root = infer_data_root(ip_dir)
+            if data_root is not None:
+                rtl_src = str(
+                    resolve_provenance_path(rtl_src, data_root)
+                )
 
         if rtl_src and os.path.exists(
                 rtl_src):

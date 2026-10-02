@@ -65,7 +65,12 @@ import yaml
 import re
 import hashlib
 
-from scripts.core.paths import iter_ip_dirs, iter_module_yamls
+from scripts.core.paths import (
+    infer_data_root,
+    iter_ip_dirs,
+    iter_module_yamls,
+    resolve_provenance_path,
+)
 
 TRAIN_RATIO = 0.70
 VALID_RATIO = 0.15
@@ -652,6 +657,18 @@ def build_examples_from_ip(
         rtl_file = spec.get(
             "source_file"
         )
+
+        #
+        # KF-DQ-002: persisted provenance is repository-relative
+        # (raw/rtl/original/...); resolve it against the data root that
+        # contains this IR tree.
+        #
+        if rtl_file and not os.path.isabs(rtl_file):
+            data_root = infer_data_root(ip_dir)
+            if data_root is not None:
+                rtl_file = str(
+                    resolve_provenance_path(rtl_file, data_root)
+                )
 
         prompt_files = (
             find_prompt_files(

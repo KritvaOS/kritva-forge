@@ -25,6 +25,8 @@ import re
 import yaml
 import shutil
 
+from scripts.core.paths import find_absolute_paths
+
 
 INCLUDE_COMMON_MODULES = True
 # --------------------------------------------------
@@ -518,7 +520,9 @@ def copy_rtl_files(
 
     for mod in modules.values():
 
-        src = mod.get( "source_file", "")
+        # Runtime absolute path (parser-provided); persisted source_file is
+        # repository-relative (KF-DQ-002) and cannot be opened directly.
+        src = mod.get("source_path") or mod.get("source_file", "")
 
         if not src:
             continue
@@ -540,6 +544,29 @@ def copy_rtl_files(
 # --------------------------------------------------
 # WRITE OUTPUTS
 # --------------------------------------------------
+
+def _dump_portable_yaml(data, path):
+    """Write YAML, refusing absolute host paths in persisted provenance (KF-DQ-002)."""
+    text = yaml.safe_dump(
+        data,
+        sort_keys=False,
+        allow_unicode=True
+    )
+    _assert_portable(text, path)
+    with open(path, "w") as f:
+        f.write(text)
+
+
+def _assert_portable(text, path):
+    hits = find_absolute_paths(text)
+    if hits:
+        line_no, line = hits[0]
+        raise ValueError(
+            f"refusing to persist absolute host path in {path} "
+            f"(line {line_no}: {line.strip()[:120]}); provenance must be "
+            "repository-relative (KF-DQ-002)"
+        )
+
 
 def build_summary_yaml(
         ip_name,
@@ -705,17 +732,10 @@ def write_ip_outputs(
             f"{module_name}.yaml"
         )
 
-        with open(
-            yaml_file,
-            "w"
-        ) as f:
-
-            yaml.safe_dump(
-                spec,
-                f,
-                sort_keys=False,
-                allow_unicode=True
-            )
+        _dump_portable_yaml(
+            spec,
+            yaml_file
+        )
 
         yaml_count += 1
 
@@ -730,6 +750,11 @@ def write_ip_outputs(
         prompt_file = os.path.join(
             prompts_dir,
             f"{module_name}.generate.txt"
+        )
+
+        _assert_portable(
+            prompt,
+            prompt_file
         )
 
         with open(
