@@ -34,3 +34,24 @@ make pipeline DATA_ROOT=/path/to/kritva-forge-data
 
 The public repository must not contain proprietary RTL, private datasets,
 generated golden corpora, model checkpoints, or restricted training data.
+
+## Canonical normalized IR layout (KF-DQ-001)
+
+```text
+normalized/ir/<ip>/
+├── hierarchy.yaml
+├── summary.yaml
+├── modules/
+│   └── <module>.yaml      # the only canonical module representation
+└── rtl/                   # RTL copies; location to be revisited in KF-DQ-006
+```
+
+Consumers must enumerate module IR with
+`scripts.core.paths.iter_module_yamls()`; any other `*.yaml` directly under
+`<ip>/` is non-canonical. Check a data checkout with:
+
+```bash
+make check-layout
+make test-data
+```
+

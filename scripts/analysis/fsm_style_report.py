@@ -21,58 +21,57 @@ import os
 import yaml
 from collections import Counter
 
-ROOT = "out"
+from scripts.core.paths import iter_module_yamls, normalized_root_from_argv
+
+# Canonical module IR only: <normalized-root>/<ip>/modules/*.yaml (KF-DQ-001).
+# Usage: python -m <this module> [normalized_root]
+ROOT = normalized_root_from_argv()
 
 hist = Counter()
 
 fsm_count = 0
 
-for root, dirs, files in os.walk(ROOT):
+for path in iter_module_yamls(ROOT):
 
-    for fn in files:
+    fn = path.name
 
-        if not fn.endswith(".yaml"):
+    try:
+
+        with open(path) as f:
+            data = yaml.safe_load(f)
+
+        fsm = data.get("fsm")
+
+        #
+        # Skip modules with no FSM
+        #
+        if not isinstance(fsm, dict):
             continue
 
-        path = os.path.join(root, fn)
+        states = fsm.get(
+            "states",
+            []
+        )
 
-        try:
+        #
+        # Match coverage.py definition
+        #
+        if len(states) < 2:
+            continue
 
-            with open(path) as f:
-                data = yaml.safe_load(f)
+        fsm_count += 1
 
-            fsm = data.get("fsm")
+        style = fsm.get(
+            "style"
+        )
 
-            #
-            # Skip modules with no FSM
-            #
-            if not isinstance(fsm, dict):
-                continue
+        if not style:
+            style = "unknown"
 
-            states = fsm.get(
-                "states",
-                []
-            )
+        hist[style] += 1
 
-            #
-            # Match coverage.py definition
-            #
-            if len(states) < 2:
-                continue
-
-            fsm_count += 1
-
-            style = fsm.get(
-                "style"
-            )
-
-            if not style:
-                style = "unknown"
-
-            hist[style] += 1
-
-        except Exception:
-            pass
+    except Exception:
+        pass
 
 print("=" * 80)
 print("FSM STYLE REPORT")

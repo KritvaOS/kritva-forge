@@ -21,43 +21,42 @@ import os
 import yaml
 from collections import Counter
 
-ROOT = "out"
+from scripts.core.paths import iter_module_yamls, normalized_root_from_argv
+
+# Canonical module IR only: <normalized-root>/<ip>/modules/*.yaml (KF-DQ-001).
+# Usage: python -m <this module> [normalized_root]
+ROOT = normalized_root_from_argv()
 
 hist = Counter()
 
 fsm_count = 0
 
-for root, dirs, files in os.walk(ROOT):
+for path in iter_module_yamls(ROOT):
 
-    for fn in files:
+    fn = path.name
 
-        if not fn.endswith(".yaml"):
-            continue
+    try:
 
-        path = os.path.join(root, fn)
+        with open(path) as f:
+            data = yaml.safe_load(f)
 
-        try:
+        summary = data.get(
+            "summary",
+            {}
+        )
 
-            with open(path) as f:
-                data = yaml.safe_load(f)
+        n = summary.get(
+            "num_fsm_states",
+            0
+        )
 
-            summary = data.get(
-                "summary",
-                {}
-            )
+        hist[n] += 1
 
-            n = summary.get(
-                "num_fsm_states",
-                0
-            )
+        if n > 0:
+            fsm_count += 1
 
-            hist[n] += 1
-
-            if n > 0:
-                fsm_count += 1
-
-        except Exception:
-            pass
+    except Exception:
+        pass
 
 print("=" * 80)
 print("FSM STATE COUNT HISTOGRAM")

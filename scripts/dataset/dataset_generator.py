@@ -65,6 +65,8 @@ import yaml
 import re
 import hashlib
 
+from scripts.core.paths import iter_ip_dirs, iter_module_yamls
+
 TRAIN_RATIO = 0.70
 VALID_RATIO = 0.15
 TEST_RATIO  = 0.15
@@ -490,42 +492,25 @@ def get_task_type(
 # --------------------------------------------------
 
 def discover_ips(yaml_root):
+    """Return canonical IP dirs (``<ip>/modules/`` present), sorted (KF-DQ-001)."""
 
     ips = []
 
-    for name in sorted(
-            os.listdir(yaml_root)
-    ):
+    for ip_dir in iter_ip_dirs(yaml_root):
 
         #
         # Skip library/common folders
         #
-        if name in SKIP_IPS:
+        if ip_dir.name in SKIP_IPS:
 
             print(
                 f"[INFO] Skipping IP: "
-                f"{name}"
+                f"{ip_dir.name}"
             )
 
             continue
 
-        ip_dir = os.path.join(
-            yaml_root,
-            name
-        )
-
-        if not os.path.isdir(ip_dir):
-            continue
-
-        if not os.path.exists(
-            os.path.join(
-                ip_dir,
-                "modules"
-            )
-        ):
-            continue
-
-        ips.append(ip_dir)
+        ips.append(str(ip_dir))
 
     return ips
 
@@ -641,15 +626,12 @@ def build_examples_from_ip(
             "prompts"
         )
 
-    for yaml_file in sorted(
-        os.listdir(
-            modules_dir
-        )
+    for yaml_path in iter_module_yamls(
+        os.path.dirname(ip_dir),
+        ip_name,
     ):
 
-        if not yaml_file.endswith(
-                ".yaml"):
-            continue
+        yaml_file = yaml_path.name
  
         module_name = os.path.splitext(
             yaml_file
@@ -1312,21 +1294,13 @@ def generate_datasets(
    
     for ip_dir in ip_dirs:
     
-        modules_dir = os.path.join(
-            ip_dir,
-            "modules"
-        )
-    
         dataset_yaml_count += len(
-            [
-                f
-                for f in os.listdir(
-                    modules_dir
+            list(
+                iter_module_yamls(
+                    os.path.dirname(ip_dir),
+                    os.path.basename(ip_dir),
                 )
-                if f.endswith(
-                    ".yaml"
-                )
-            ]
+            )
         )
     
     total_examples = len(train) + len(validation) + len(test)

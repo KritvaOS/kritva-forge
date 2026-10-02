@@ -59,3 +59,17 @@ The current repository no longer treats `data/raw_rtl`, `data/curated`, or
 The pipeline still accepts the legacy two-positional-argument interface for
 compatibility, while the preferred interface uses explicit roots or
 `--data-root`.
+
+## KF-DQ-001 — Canonical normalized IR layout
+
+`normalized/ir/<ip>/modules/<module>.yaml` is the only canonical module
+representation. Root-level `normalized/ir/<ip>/<module>.yaml` files were stale
+`bes_verilog_llm` artifacts and are removed from `kritva-forge-data`.
+
+- `scripts/core/paths.py` provides `iter_module_yamls()`, `iter_ip_dirs()` and
+  `find_noncanonical_module_yamls()`; all IR consumers use them.
+- FSM report/debug scripts no longer walk the legacy `out/` tree; they take an
+  optional `normalized_root` argument (default `<data-root>/normalized/ir`).
+- `run_pipeline` never writes prompts/reports/datasets inside
+  `normalized_root` and fails if non-canonical module YAMLs are present.
+- `make test-data` / `make check-layout` validate a data checkout.

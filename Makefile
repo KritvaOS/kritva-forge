@@ -28,12 +28,14 @@ DATASET_DIR ?= $(DATA_ROOT)/datasets/pipeline
 CURATED_DIR ?=
 PROJECT ?= $(NORMALIZED_DIR)
 
-.PHONY: help venv setup test compile pipeline headers clean
+.PHONY: help venv setup test test-data check-layout compile pipeline headers clean
 
 help:
 	@echo "Kritva Forge targets:"
 	@echo "  make setup       - create .venv and install Python dependencies"
 	@echo "  make test        - run unit tests"
+	@echo "  make test-data   - run data-repository invariant tests (needs DATA_ROOT)"
+	@echo "  make check-layout - fail if non-canonical module YAMLs exist in NORMALIZED_DIR"
 	@echo "  make compile     - syntax-check Python sources"
 	@echo "  make headers     - validate KritvaOS source headers"
 	@echo "  make pipeline    - parse RTL and generate normalized IR/datasets"
@@ -61,6 +63,12 @@ compile: setup
 
 test: setup
 	$(PYTHON) -m pytest -q
+
+test-data: setup
+	KRITVA_FORGE_DATA_ROOT="$(DATA_ROOT)" $(PYTHON) -m pytest -q -rx tests/data
+
+check-layout: setup
+	PYTHONPATH=. $(PYTHON) -c "import sys; from scripts.pipeline.run_pipeline import check_canonical_layout; check_canonical_layout(sys.argv[1]); print('[INFO] Canonical IR layout OK:', sys.argv[1])" "$(NORMALIZED_DIR)"
 
 headers:
 	python3 scripts/lint/check_source_headers.py --mode tracked --strict

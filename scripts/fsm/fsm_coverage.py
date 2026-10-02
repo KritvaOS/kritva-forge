@@ -16,18 +16,17 @@
 from __future__ import annotations
 
 import argparse
-import glob
-import os
 
 import yaml
+
+from scripts.core.paths import default_normalized_root, iter_module_yamls
 
 
 def report(root: str) -> tuple[int, int]:
     total = 0
     encoded = 0
 
-    pattern = os.path.join(root, "**", "modules", "*.yaml")
-    for filename in glob.glob(pattern, recursive=True):
+    for filename in iter_module_yamls(root):
         try:
             with open(filename, encoding="utf-8") as handle:
                 data = yaml.safe_load(handle) or {}
@@ -52,7 +51,7 @@ def main() -> int:
     parser.add_argument(
         "normalized_root",
         nargs="?",
-        default="../kritva-forge-data/normalized/ir",
+        default=str(default_normalized_root()),
         help="Normalized IR root.",
     )
     args = parser.parse_args()

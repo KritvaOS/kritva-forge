@@ -21,7 +21,11 @@ import os
 import yaml
 from collections import Counter
 
-ROOT = "out"
+from scripts.core.paths import iter_module_yamls, normalized_root_from_argv
+
+# Canonical module IR only: <normalized-root>/<ip>/modules/*.yaml (KF-DQ-001).
+# Usage: python -m <this module> [normalized_root]
+ROOT = normalized_root_from_argv()
 
 fsm_count = 0
 
@@ -36,128 +40,123 @@ self_loop_sum = 0
 
 worst_fsms = []
 
-for root, dirs, files in os.walk(ROOT):
+for path in iter_module_yamls(ROOT):
 
-    for fn in files:
+    fn = path.name
 
-        if not fn.endswith(".yaml"):
+    try:
+
+        with open(path) as f:
+            data = yaml.safe_load(f)
+
+        fsm = data.get("fsm")
+
+        if not isinstance(fsm, dict):
             continue
 
-        path = os.path.join(root, fn)
+        states = fsm.get(
+            "states",
+            []
+        )
 
-        try:
+        if len(states) < 2:
+            continue
 
-            with open(path) as f:
-                data = yaml.safe_load(f)
+        quality = fsm.get(
+            "quality",
+            {}
+        )
 
-            fsm = data.get("fsm")
+        fsm_count += 1
 
-            if not isinstance(fsm, dict):
-                continue
+        score = quality.get(
+            "score",
+            "unknown"
+        )
 
-            states = fsm.get(
-                "states",
-                []
+        score_hist[score] += 1
+
+        orphan_states = quality.get(
+            "orphan_states",
+            []
+        )
+
+        terminal_states = quality.get(
+            "terminal_states",
+            []
+        )
+
+        unreachable_states = quality.get(
+            "unreachable_states",
+            []
+        )
+
+        unknown_targets = quality.get(
+            "unknown_targets",
+            []
+        )
+
+        if unknown_targets:
+            print( "UNKNOWN TARGETS:")
+            for t in unknown_targets[:10]:
+                print( "   ", t)
+
+
+        if orphan_states:
+            fsm_with_orphans += 1
+
+        if terminal_states:
+            fsm_with_terminal += 1
+
+        if unreachable_states:
+            fsm_with_unreachable += 1
+
+        coverage = quality.get(
+            "transition_coverage",
+            0.0
+        )
+
+        self_loops = quality.get(
+            "self_loops",
+            0
+        )
+
+        coverage_sum += coverage
+        self_loop_sum += self_loops
+
+        module_name = data.get(
+            "module_name",
+            fn.replace(
+                ".yaml",
+                ""
             )
+        )
 
-            if len(states) < 2:
-                continue
+        worst_fsms.append({
 
-            quality = fsm.get(
-                "quality",
-                {}
-            )
+            "module":
+                module_name,
 
-            fsm_count += 1
+            "score":
+                score,
 
-            score = quality.get(
-                "score",
-                "unknown"
-            )
+            "coverage":
+                coverage,
 
-            score_hist[score] += 1
+            "orphans":
+                len(orphan_states),
 
-            orphan_states = quality.get(
-                "orphan_states",
-                []
-            )
+            "terminal":
+                len(terminal_states),
 
-            terminal_states = quality.get(
-                "terminal_states",
-                []
-            )
+            "unreachable":
+                len(unreachable_states),
+            "unknown_targets":
+                len(unknown_targets)
+        })
 
-            unreachable_states = quality.get(
-                "unreachable_states",
-                []
-            )
-
-            unknown_targets = quality.get(
-                "unknown_targets",
-                []
-            )
-
-            if unknown_targets:
-                print( "UNKNOWN TARGETS:")
-                for t in unknown_targets[:10]:
-                    print( "   ", t)
-
-
-            if orphan_states:
-                fsm_with_orphans += 1
-
-            if terminal_states:
-                fsm_with_terminal += 1
-
-            if unreachable_states:
-                fsm_with_unreachable += 1
-
-            coverage = quality.get(
-                "transition_coverage",
-                0.0
-            )
-
-            self_loops = quality.get(
-                "self_loops",
-                0
-            )
-
-            coverage_sum += coverage
-            self_loop_sum += self_loops
-
-            module_name = data.get(
-                "module_name",
-                fn.replace(
-                    ".yaml",
-                    ""
-                )
-            )
-
-            worst_fsms.append({
-
-                "module":
-                    module_name,
-
-                "score":
-                    score,
-
-                "coverage":
-                    coverage,
-
-                "orphans":
-                    len(orphan_states),
-
-                "terminal":
-                    len(terminal_states),
-
-                "unreachable":
-                    len(unreachable_states),
-                "unknown_targets":
-                    len(unknown_targets)
-            })
-
-        except Exception:
-            pass
+    except Exception:
+        pass
 
 print("=" * 80)
 print("FSM QUALITY REPORT")
