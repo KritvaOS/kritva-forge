@@ -16,6 +16,7 @@
 from __future__ import annotations
 
 import os
+import re
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Iterator
@@ -208,3 +209,121 @@ def normalized_root_from_argv(argv: list[str] | None = None) -> Path:
     if len(argv) > 1 and argv[1]:
         return Path(argv[1]).expanduser().resolve()
     return default_normalized_root()
+
+
+# -----------------------------------------------------------------------------
+# Portable provenance paths (KF-DQ-002)
+#
+# Persisted provenance (``source_file`` and every nested equivalent) is always
+# a POSIX path relative to the data-repository root, e.g.
+#
+#     raw/rtl/original/common/pulse_gen_type2.sv
+#
+# Absolute host paths are runtime-only and are never written to artifacts.
+# -----------------------------------------------------------------------------
+
+RAW_RTL_PARTS = ("raw", "rtl")
+
+# Absolute host-path roots that must never appear in persisted artifacts.
+FORBIDDEN_ABSOLUTE_ROOTS = ("home", "tmp", "mnt", "Users", "workspace")
+
+# An absolute path begins at the start of a line/string or after whitespace,
+# a quote, or a YAML/JSON/assignment delimiter.  A relative path that merely
+# contains ``/tmp/`` (e.g. ``raw/rtl/original/tmp/x.v``) does not match.
+ABSOLUTE_PATH_RE = re.compile(
+    r"(?:^|(?<=[\s\"'=:(\[,]))/(?:"
+    + "|".join(FORBIDDEN_ABSOLUTE_ROOTS)
+    + r")/",
+    re.MULTILINE,
+)
+
+
+def infer_data_root(path: str | os.PathLike[str]) -> Path | None:
+    """Return the data-repository root containing ``path``, if any.
+
+    The data root is the nearest ancestor (or ``path`` itself) that contains a
+    ``raw/rtl/`` directory.  Works for RTL inputs
+    (``<root>/raw/rtl/original/<ip>``) and outputs
+    (``<root>/normalized/ir/<ip>``).  Independent of the current directory.
+    """
+    current = Path(path).expanduser().resolve()
+    for candidate in (current, *current.parents):
+        if candidate.joinpath(*RAW_RTL_PARTS).is_dir():
+            return candidate
+    return None
+
+
+def to_provenance_path(
+    path: str | os.PathLike[str],
+    data_root: str | os.PathLike[str],
+) -> str:
+    """Convert a runtime RTL path into portable persisted provenance.
+
+    Returns a POSIX path relative to ``data_root``.  Raises ``ValueError`` if
+    ``path`` lies outside ``data_root`` (an absolute path must never be
+    persisted as a fallback).
+    """
+    root = Path(data_root).expanduser().resolve()
+    target = Path(path).expanduser()
+    if not target.is_absolute():
+        target = Path.cwd() / target
+    target = target.resolve()
+    try:
+        relative = target.relative_to(root)
+    except ValueError as exc:
+        raise ValueError(
+            f"RTL path {target} is outside the data root {root}; "
+            "cannot record portable provenance"
+        ) from exc
+    return relative.as_posix()
+
+
+def resolve_provenance_path(
+    provenance: str | os.PathLike[str],
+    data_root: str | os.PathLike[str] | None,
+) -> Path:
+    """Resolve persisted provenance back to a runtime filesystem path.
+
+    Legacy absolute provenance is returned unchanged.
+    """
+    candidate = Path(provenance)
+    if candidate.is_absolute():
+        return candidate
+    if data_root is None:
+        raise ValueError(
+            f"relative provenance {provenance!r} needs a data root to resolve"
+        )
+    return Path(data_root).expanduser().resolve() / candidate
+
+
+def find_absolute_paths(text: str) -> list[tuple[int, str]]:
+    """Return ``(line_number, line)`` for lines containing a forbidden absolute path."""
+    return [
+        (line_no, line)
+        for line_no, line in enumerate(text.splitlines(), start=1)
+        if ABSOLUTE_PATH_RE.search(line)
+    ]
+
+
+def scan_absolute_paths(
+    roots: list[str | os.PathLike[str]],
+    suffixes: tuple[str, ...] = (".yaml", ".yml", ".json", ".jsonl", ".txt"),
+) -> list[tuple[Path, int, str]]:
+    """Scan artifact trees for forbidden absolute host paths.
+
+    Returns ``(file, line_number, line)`` for every offending line.
+    Non-existent roots are skipped.
+    """
+    findings = []
+    for root in roots:
+        root = Path(root)
+        if not root.exists():
+            continue
+        files = [root] if root.is_file() else sorted(root.rglob("*"))
+        for path in files:
+            if not path.is_file() or path.suffix not in suffixes:
+                continue
+            text = path.read_text(encoding="utf-8", errors="replace")
+            for line_no, line in find_absolute_paths(text):
+                findings.append((path, line_no, line))
+    return findings
