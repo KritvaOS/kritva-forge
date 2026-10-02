@@ -224,6 +224,40 @@ The IR should remain serializable.
 
 Raw parser AST objects should not be stored in persistent YAML/JSON representations.
 
+## 5.1 Provenance and Stable Node Identity
+
+Every persisted IR node carries portable provenance (KF-DQ-002) and a
+deterministic content identity (KF-DQ-003):
+
+```yaml
+identity_version: 1                       # module-level identity model version
+...
+- node_id: n1:4fc1e05d2cb15eab            # stable content identity
+  syntax_type: ParameterDeclarationStatementSyntax
+  source_file: raw/rtl/original/uart/uart_tx.v   # top-level RTL file (repo-relative)
+  offset: 342
+  buffer: raw/rtl/original/uart/uart_tx.v        # file that physically holds the token
+```
+
+`node_id` is `n<version>:` plus the first 16 hex digits of SHA-256 over:
+
+```text
+"kf-node" | "v1" | source_file | syntax_kind | start location key | end location key
+```
+
+A location key is `file|offset`; for macro-expanded tokens it is
+`expanded_file|expanded_offset|macro|spelling_file|spelling_offset|macro_offset`.
+All files are repository-relative.
+
+The identity never uses `id()`, Python `hash()`, UUIDs, timestamps, process,
+host or user information, absolute paths, or pyslang `BufferID` allocation
+numbers. It is therefore identical across repeated runs, relocated data roots
+and parse order. Two nodes share an identity only if they are the same syntax
+kind with exactly the same start and end token positions in the same source
+file. The implementation and full specification live in
+`scripts/core/identity.py`; any change to the payload must bump
+`IDENTITY_VERSION`.
+
 ---
 
 # 6. Semantic Analysis
@@ -652,6 +686,9 @@ parser_version: "0.1"
 ```
 
 This is important because datasets generated from one version of the IR should remain identifiable when the parser evolves.
+
+Node identity is versioned separately as `identity_version`
+(see section 5.1).
 
 ---
 

@@ -21,7 +21,6 @@ only when ``KRITVA_FORGE_DATA_ROOT`` points at a real data checkout.
 """
 
 import os
-import re
 import subprocess
 import sys
 from pathlib import Path
@@ -85,11 +84,6 @@ def _provenance_values(obj):
     elif isinstance(obj, (list, tuple)):
         for item in obj:
             yield from _provenance_values(item)
-
-
-def _mask(text):
-    text = re.sub(r"node_id: \d+", "node_id: N", text)
-    return re.sub(r"BufferID\(\d+\)", "BufferID(N)", text)
 
 
 # -----------------------------------------------------------------------------
@@ -214,8 +208,9 @@ def test_relocated_roots_generate_identical_ir(tmp_path):
         data = ForgeDataPaths.from_root(data_root)
         modules, top = _parse(data_root)
         write_ip_outputs("common", modules, top, str(data.normalized_ir), prompt_root=str(data.prompts))
-        outputs.append(_mask(data.module_yaml("common", "pulse_gen_type2").read_text()))
+        outputs.append(data.module_yaml("common", "pulse_gen_type2").read_text())
 
+    # KF-DQ-003: identities are stable, so no node_id / BufferID masking.
     assert outputs[0] == outputs[1]
     assert str(tmp_path) not in outputs[0]
 
