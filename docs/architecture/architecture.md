@@ -544,6 +544,33 @@ The actual RTL corpus and generated private datasets reside in:
 KritvaOS/kritva-forge-data
 ```
 
+## 11.1 Leakage-Safe Splits
+
+Train / validation / test assignment is deterministic and leakage-aware
+(`scripts/dataset/leakage.py`, `LEAKAGE_SCHEMA_VERSION = 1`).  There is no
+random seed; the split depends only on record content.
+
+Every record carries versioned identities:
+
+| Kind | Identities | Rule |
+|------|------------|------|
+| Hard | `source_rtl`, `module_body`, `normalized_ir`, `completion` | must never cross splits |
+| Soft | `body_shape` (identifier-agnostic), `module_name` | reported only |
+| Info | `ip` | reported only |
+
+Records sharing any hard identity are joined into one leakage group.
+`body_shape` also joins groups when the same shape appears in more than one
+IP (cross-IP near-duplicates).  Groups spanning several IPs are shared
+library code and are assigned to `train`; each IP's remaining records form
+one atomic unit, placed largest first into the split furthest below its
+target (70 / 15 / 15).
+
+The assignment is written to `splits/split_manifest.json` and the gate
+report to `analysis/reports/split_leakage_report.json`.  Dataset generation
+fails if any hard group crosses splits, a record is duplicated, or the
+manifest disagrees with the dataset files.  `make check-leakage` re-runs the
+gate against an existing data checkout.
+
 ---
 
 # 12. Private Data Repository
