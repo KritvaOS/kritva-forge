@@ -106,6 +106,7 @@ import os
 import glob
 import re
 from pyslang.syntax import SyntaxKind
+from scripts.semantic_ir.extractor import ModuleExtractor
 from pyslang.syntax import SyntaxTree
 from scripts.fsm.fsm_extractor import extract_fsm_ast
 from scripts.structural.fsm_structural import structural_fsm_analysis
@@ -1295,6 +1296,14 @@ def _extract_file_modules(tree, path, provenance):
             member,
             provenance
         )
+
+        # KF-DQ-008: Semantic IR v2 (runtime only; written by yaml_generator)
+        mod["_semantic"] = ModuleExtractor(
+            _SOURCE_IDENTITY,
+            tree.sourceManager,
+            provenance,
+            unit_members=list(tree.root.members),
+        ).extract(member)
 
         # Runtime-only absolute location (never persisted); used to read or
         # copy the RTL file during this pipeline run.

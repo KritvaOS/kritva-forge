@@ -73,6 +73,8 @@ INVENTORY_PATH = "manifests/artifact_inventory.json"
 REPORT_PATH = "analysis/reports/stale_artifact_report.json"
 DATA_MANIFEST_PATH = "manifests/data_manifest.json"        # KF-DQ-007, validated by data_manifest.py
 DATA_MANIFEST_REPORT_PATH = "analysis/reports/data_manifest_report.json"
+SEMANTIC_REPORT_PATH = "analysis/reports/semantic_ir_report.json"   # KF-DQ-008 semantic gate
+SEMANTIC_DIR = "normalized/semantic_ir/v2"                          # KF-DQ-008 canonical Semantic IR
 # Gate outputs: listed whether or not they exist yet (their hashes are not
 # recorded), so the inventory never depends on itself; each is verified by
 # its own validator.
@@ -116,6 +118,7 @@ PIPELINE_OUTPUT_KINDS = frozenset({
     "dataset_split", "dataset_records", "dataset_manifest", "dataset_stats", "split_manifest",
     "provenance_manifest", "provenance_report", "split_leakage_report", "pipeline_stats",
     "artifact_inventory", "stale_artifact_report", "data_manifest", "data_manifest_report",
+    "semantic_ir_report",
 })
 _PROMPT_RE = re.compile(r"^generated/prompts/([^/]+)/([^/]+)\.generate\.txt$")
 
@@ -239,6 +242,7 @@ class Context:
         for ip, mod in sorted(self.modules):
             exp[f"normalized/ir/{ip}/modules/{mod}.yaml"] = ("canonical_ir", ip, mod)
             exp[f"generated/prompts/{ip}/{mod}.generate.txt"] = ("prompt", ip, mod)
+            exp[f"{SEMANTIC_DIR}/{ip}/{mod}.json"] = ("semantic_ir", ip, mod)          # KF-DQ-008
         for ip in self.ips:
             exp[f"normalized/ir/{ip}/hierarchy.yaml"] = ("ip_metadata", ip, None)
             exp[f"normalized/ir/{ip}/summary.yaml"] = ("ip_metadata", ip, None)
@@ -249,6 +253,7 @@ class Context:
             "analysis/reports/pipeline_stats.json": "pipeline_stats",
             "analysis/reports/split_leakage_report.json": "split_leakage_report",
             "analysis/reports/provenance_report.json": "provenance_report",
+            SEMANTIC_REPORT_PATH: "semantic_ir_report",
             REPORT_PATH: "stale_artifact_report",
             "splits/split_manifest.json": "split_manifest",
             "manifests/provenance_manifest.json": "provenance_manifest",
@@ -429,6 +434,9 @@ def classify(data_root, use_recorded: bool = True) -> dict:
                     add(rel, kind, "ORPHAN", f"source {ctx.modules[(ip, mod)]['source']['path']} missing "
                         f"({ctx.modules[(ip, mod)]['transformation']})", ip, mod)
                     counters["invalid_source_identities"] += 1
+            elif kind == "semantic_ir":
+                state, reason = _semantic_state(ctx, path, ip, mod, counters)
+                add(rel, kind, state, reason, ip, mod)
             elif kind == "ip_metadata":
                 state = "CURRENT" if ip in ctx.raw_ips else "ORPHAN"
                 add(rel, kind, state, None if state == "CURRENT" else f"IP {ip} has no raw RTL", ip)
@@ -439,7 +447,14 @@ def classify(data_root, use_recorded: bool = True) -> dict:
                     None if ok else "RTL copy differs from its canonical source", ip)
             else:
                 parts = rel.split("/")
-                if len(parts) >= 3 and parts[1] == "ir" and parts[2] not in ctx.ips:
+                if len(parts) >= 2 and parts[1] == "semantic_ir":
+                    if rel.startswith(SEMANTIC_DIR + "/") and len(parts) == 5 and parts[4].endswith(".json"):
+                        add(rel, "semantic_ir", "ORPHAN",
+                            f"module {parts[3]}/{parts[4][:-5]} has no canonical IR", parts[3])
+                    else:
+                        add(rel, "semantic_other", "UNMANAGED",
+                            f"not part of the Semantic IR layout ({SEMANTIC_DIR}/<ip>/<module>.json)")
+                elif len(parts) >= 3 and parts[1] == "ir" and parts[2] not in ctx.ips:
                     add(rel, "ir_other", "ORPHAN", f"IP {parts[2]} has no canonical module IR", parts[2])
                 elif len(parts) >= 4 and parts[1] == "ir" and parts[3] == "rtl":
                     add(rel, "rtl_copy", "STALE", "RTL copy not referenced by any canonical module", parts[2])
@@ -553,6 +568,9 @@ def classify(data_root, use_recorded: bool = True) -> dict:
             key = "provenance_version" if kind == "provenance_report" else "leakage_schema_version"
             ok = isinstance(data, dict) and data.get(key) == version and data.get("status") == "PASS"
             add(rel, kind, "CURRENT" if ok else "STALE", None if ok else "obsolete schema or non-PASS report")
+        elif kind == "semantic_ir_report":
+            state, reason = _semantic_report_state(root, path)
+            add(rel, kind, state, reason)
         elif kind == "pipeline_stats":
             data = _load_json(path)
             ok = isinstance(data, dict) and data.get("ips") == len(ctx.ips) and data.get("modules") == len(ctx.modules)
@@ -586,6 +604,51 @@ def classify(data_root, use_recorded: bool = True) -> dict:
     entries.sort(key=lambda e: e["path"])
     return {"entries": entries, "missing": missing, "counters": counters, "expected": len(expected),
             "context": ctx}
+
+
+def _semantic_state(ctx, path: Path, ip, mod, counters) -> tuple[str, str | None]:
+    """KF-DQ-008: a Semantic IR v2 document is CURRENT only if it carries the current
+    schema version, module identity and source sha256 and passes the validator."""
+    from scripts.semantic_ir import model as SM
+    from scripts.semantic_ir.validator import validate_module
+
+    current = ctx.modules[(ip, mod)]
+    if not ctx.module_ok(ip, mod):
+        counters["invalid_source_identities"] += 1
+        return "ORPHAN", f"source {current['source']['path']} missing ({current['transformation']})"
+    doc = _load_json(path)
+    if not isinstance(doc, dict):
+        return "STALE", "unreadable Semantic IR document"
+    if doc.get("schema") != {"name": SM.SCHEMA_NAME, "version": SM.SCHEMA_VERSION}:
+        counters["obsolete_schema"] += 1
+        return "STALE", f"obsolete semantic schema {doc.get('schema')!r} (expected v{SM.SCHEMA_VERSION})"
+    m = doc.get("module") or {}
+    if m.get("module_id") != current["module_id"] or m.get("ip") != ip or m.get("name") != mod:
+        counters["invalid_module_identities"] += 1
+        return "STALE", "module identity does not match the canonical module"
+    src = m.get("source") or {}
+    if src.get("path") != current["source"]["path"] or src.get("sha256") != current["source"]["sha256"]:
+        counters["invalid_source_identities"] += 1
+        return "STALE", f"generated from an older {current['source']['path']} (source sha256 differs)"
+    problems = validate_module(doc, set(ctx.module_ids))
+    if problems:
+        counters["invalid_semantic_ir"] += 1
+        return "STALE", f"fails Semantic IR validation: [{problems[0][0]}] {problems[0][1]}"[:300]
+    return "CURRENT", None
+
+
+def _semantic_report_state(root: Path, path: Path) -> tuple[str, str | None]:
+    from scripts.semantic_ir import model as SM
+    from scripts.semantic_ir.validator import corpus_sha256
+
+    rep = _load_json(path)
+    if not isinstance(rep, dict) or rep.get("schema") != {"name": SM.SCHEMA_NAME, "version": SM.SCHEMA_VERSION}:
+        return "STALE", "missing or obsolete semantic schema"
+    if rep.get("status") != "PASS":
+        return "STALE", "semantic gate did not pass"
+    if rep.get("corpus_sha256") != corpus_sha256(root):
+        return "STALE", "Semantic IR corpus changed since this report was written"
+    return "CURRENT", None
 
 
 def remediation(entry: dict) -> str:
@@ -653,6 +716,7 @@ def build_report(result: dict, inventory_status: str | None, override: bool = Fa
         "invalid_source_identities": c["invalid_source_identities"],
         "invalid_module_identities": c["invalid_module_identities"],
         "missing_ir_references": c["missing_ir_references"],
+        "invalid_semantic_ir": c["invalid_semantic_ir"],
         "obsolete_schema": c["obsolete_schema"],
         "absolute_paths": c["absolute_paths"],
         "symlinks": c["symlinks"],
@@ -710,7 +774,7 @@ def write(data_root, override: bool = False) -> dict:
 def format_report(report: dict) -> str:
     rows = ["artifact_records_checked", "expected_artifacts", "current", "stale", "orphan", "historical",
             "unmanaged", "missing_expected", "duplicate_artifacts", "invalid_provenance",
-            "invalid_source_identities", "invalid_module_identities", "missing_ir_references",
+            "invalid_source_identities", "invalid_module_identities", "missing_ir_references", "invalid_semantic_ir",
             "obsolete_schema", "absolute_paths", "symlinks", "dataset_records_checked",
             "split_records_checked", "cleanup_candidates", "remediation_counts", "inventory_status"]
     lines = [f"Stale artifact check: {report['status']}" + (" (override)" if report.get("override") else "")]

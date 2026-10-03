@@ -117,7 +117,7 @@ def test_pipeline_writes_single_valid_canonical_manifest(built):
     assert report["status"] == "PASS", report["problems"]
     assert M.check(built.root)["status"] == "PASS"
     m = _load(built)
-    assert m["schema"] == {"name": "kritva-forge-data-manifest", "version": 1}
+    assert m["schema"] == {"name": "kritva-forge-data-manifest", "version": 2}
     assert m["repository"] == {"name": "kritva-forge-data"}
     assert set(m["versions"]) >= {"manifest", "identity", "provenance", "leakage_schema", "split_schema",
                                   "artifact_schema"}
@@ -315,7 +315,7 @@ def test_10_broken_dataset_reference(tree):
 
 def test_11_unsupported_schema_version(tree):
     m = _load(tree)
-    m["schema"]["version"] = 2
+    m["schema"]["version"] = 99
     m["versions"]["provenance"] = 99
     _store(tree, m)
     assert _fails(tree, "schema_errors")["schema_errors"] >= 2

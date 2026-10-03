@@ -258,6 +258,209 @@ file. The implementation and full specification live in
 `scripts/core/identity.py`; any change to the payload must bump
 `IDENTITY_VERSION`.
 
+## 5.2 Semantic IR v2 (KF-DQ-008)
+
+**Purpose.** The v1 module YAML (`normalized/ir/<ip>/modules/<module>.yaml`)
+describes structure: ports, signals, parameters and instances. Its
+behavioural fields (`always_blocks`, `assigns`, `num_*`) are always empty
+because of a key mismatch: the parser stores `continuous_assigns` /
+`processes`, while `yaml_generator` reads `assigns` / `always_blocks`.
+Semantic IR v2 is a separate, versioned, source-level semantic
+representation. It covers declarations, types, expressions, assignments,
+conditions, cases, instances and symbol references. Downstream tasks
+consume it through this documented contract instead of parser-specific
+fields.
+
+**Output location and versions.** There is exactly one canonical location:
+`normalized/semantic_ir/v2/<ip>/<module>.json`, one document per canonical
+module. The v1 IR is not touched. Both representations are independently
+valid and independently tested. Consumers name the version they read
+(`normalized/ir` v1 or `normalized/semantic_ir/v2`).
+
+Every document carries:
+
+- `schema: {name: kritva-forge-semantic-ir, version: 2}`
+- `versions`:
+  - `schema`: 2
+  - `identity`: 1, the `sem1:` namespace
+  - `node_identity`: the KF-DQ-003 `n1` version
+  - `parser`, for example `pyslang 12.0.0`
+  - `compatibility.normalized_ir`: 1
+
+Serialisation is canonical and byte-deterministic: sorted keys, compact
+separators, UTF-8 and a trailing newline. The corpus is about 32 MB; use
+`python -m json.tool` to read a document. The contract is in
+`scripts/semantic_ir/model.py`. The generator is `extractor.py`, called from
+`rtl_parser_slang` and `yaml_generator.write_semantic_ir`. The validator is
+`validator.py`.
+
+**Schema** (document sections):
+
+| Section | Content (criteria §6) |
+|---|---|
+| `module` | name, `id` (`sem1:`), `module_id` (`mod1:`, KF-DQ-005), `ip`, `is_top`, `source {path, sha256}`, `loc` |
+| `parameters` | parameter / localparam / genvar: type, signedness, packed dimensions, `width` (null when untyped), default expression, constant `value`, `port_param`, `loc` |
+| `ports` | in declaration order: direction (input/output/inout/ref/unknown), net/variable `kind`, type, `signed`, `packed` / `unpacked` dimensions, `width`, `default`, ANSI or non-ANSI style, `loc` |
+| `signals` | nets and variables (implicit nets marked): `kind` and `net_type` distinguish wire/net from logic/reg/integer variables; same type fields as ports |
+| `typedefs` | enum (members with values; anonymous enums have `name: null`), struct/union, alias |
+| `subroutines` | functions and tasks: ports (the return value is a `return`-direction port), body |
+| `assignments` | target and value expressions, `kind` (continuous / blocking / nonblocking / compound / declaration), operator, referenced symbols (`writes`, `reads`), `guards`, owner (`process` / `subroutine` / `generate`), scope, `loc` |
+| `processes` | containers for procedural code: `kind` (keyword), `sensitivity` as written (`list` / `implicit` / `none`), `events` (edge + expression), statement `body`, assignment ids |
+| `conditions` | one record per `if`: owner, unique/priority qualifier, `predicate_references`, `then` / `else` statement ids, `loc` |
+| `cases` | one record per case: `case_kind` (case/casez/casex), qualifier, `selector_references`, `items` (label count, `label_references`, body), `default`, `loc` |
+| `instances` | instance name, referenced `module`, `resolved` and `target_module_id` (null when unresolved), parameter overrides, connections (named/ordered/implicit/wildcard/empty, port, expression, direction), `loc` |
+| `generates` | region / loop / if / case / block, `representation: source-level` (not elaborated) |
+| `references` | one record per symbol **use** (see below) |
+| `external` | compilation-unit declarations from `include`d headers |
+| `unsupported` | every construct that is not modelled |
+| `coverage`, `counts`, `extraction`, `generator` | accounting, and `complete` or `partial` |
+
+**Expressions** are trees that preserve operand order:
+
+- `ref`: `id`, name, `ref_kind`, and `target` (the defining entity, or null)
+- `literal`: text, value, base, width, `has_xz`
+- `unary`, `binary`, `ternary`
+- `concat`, `replicate`
+- `index`, `part_select` (`:`, `+:`, `-:`)
+- `member`
+- `call`: system or user function, with arguments
+- `cast`
+- `opaque`
+
+Constant parameter expressions, including `$clog2`, and widths are evaluated
+where determinable; otherwise they are null.
+
+Statement trees inside processes and subroutines are made of:
+
+- `assign`
+- `if`
+- `case`
+- `block`
+- `loop`
+- `timing`
+- `null`
+- `return`
+- `call`
+- `declaration`
+- `opaque`
+
+**Declarations and references.** Declarations are the entities in
+`parameters`, `ports`, `signals`, `typedefs` (and their enum members),
+`subroutines`, genvars and block-local declarations. Each use of a symbol
+is a `ref` expression node with its own identity. `references` indexes
+every use with these fields:
+
+| Field | Meaning |
+|---|---|
+| `symbol` | the name used |
+| `ref_kind` | port, signal, parameter, genvar, local, enum_member, subroutine, type, external, hierarchical or unresolved |
+| `target` | the defining entity |
+| `source` | the referencing entity: an assignment, statement, process, instance, declaration or generate |
+| `usage` | `read`, `write` (the written base of an assignment target) or `connect` (an instance port expression) |
+| `loc` | the source span |
+
+Names that cannot be resolved stay explicit as `unresolved` with a null
+target. Nothing is guessed.
+
+**Assignments and guards.** `guards` lists the enclosing control constructs,
+outermost first. Each entry is `{statement, branch}`, where `branch` is
+`then`, `else`, `item` (with the `item` index), `default` or `body`. It
+records where an assignment sits without claiming execution semantics.
+
+**Identity.** Every semantic entity has
+`id = "sem1:" + sha256("kf-sem", "v1", category, n1, qualifier)[:16]`,
+where:
+
+- `n1` is the KF-DQ-003 node identity (repository-relative file, syntax kind, token positions);
+- `category` is the entity kind;
+- `qualifier` disambiguates several entities derived from one syntax node.
+
+When one type is shared by several declarators, copies of its range
+expressions get reference identities derived from (reference identity,
+declarator). Identities are stable across runs, parse order and checkout
+location, and change only when the RTL changes. Modules keep `mod1:`;
+source identity is the content sha256.
+
+**Provenance.** The module records `source {path, sha256}`. Every entity,
+statement, reference and unsupported record carries `loc {file, line,
+column, offset}`. The path is repository-relative and names the physical
+buffer, so an `include`d header gives the header's path. For
+macro-expanded tokens, `loc` is the fully original location. No
+machine-local path is persisted.
+
+**Unsupported constructs.** Unsupported constructs are explicit, never
+dropped. Each one becomes an `opaque` statement, expression or member node
+and is listed in `unsupported` with construct, level, reason, text and
+`loc`. When anything is opaque, `extraction` is `partial`. Examples are
+`wait`, `case … inside` and `force`.
+
+**Validation (fail closed).** `scripts/semantic_ir/validator.py` (also
+`make check-semantic`) runs two levels of checks.
+
+Per-document checks:
+
+- schema and identity versions
+- required fields and enumerations
+- missing, malformed or duplicate identities
+- duplicate declarations
+- provenance presence and portability (absolute paths, `..`)
+- port directions
+- widths (positive, and consistent with constant packed ranges)
+- expression, statement, assignment, condition and case structure
+- references: unresolvable targets, resolvable kinds without a definition, and index ↔ tree agreement
+- instance resolution
+- canonical ordering
+- silent loss of unsupported constructs
+
+Corpus checks:
+
+- one document per canonical module
+- duplicate module identities
+- duplicate canonical output paths
+- canonical bytes
+- current source sha256
+
+The corpus report is written to `analysis/reports/semantic_ir_report.json`
+and includes `corpus_sha256`.
+
+**Gates and data manifest.** The pipeline parses the RTL and writes the v1 IR
+and Semantic IR v2. The gates then run in this order:
+
+1. pre-dataset stale gate
+2. Semantic IR v2 gate (no override)
+3. datasets
+4. provenance
+5. post-run stale gate
+6. data manifest gate
+
+The stale gate classifies `normalized/semantic_ir/v2` documents. A document
+is CURRENT only when its schema, `mod1:`, source path/sha256 and validation
+are all current. A document for a non-canonical module is ORPHAN; any other
+file there is UNMANAGED. The report's `corpus_sha256` is checked after the
+run.
+
+The data manifest (version 2) gives each module
+`semantic_ir {path, sha256, schema_version, identity_version, status,
+derived_from {source, source_sha256}}`, plus `versions.semantic_ir`,
+`semantic_identity` and `semantic_parser_version`. Invalid Semantic IR is
+never published. A version-1 manifest is rejected and regenerated.
+
+**Compatibility and boundaries.**
+
+- v1 IR, prompts, datasets, splits, provenance and all identities are
+  unchanged. Semantic IR v2 is additive; nothing is overwritten.
+- The v1 behavioural fields remain empty. They are superseded by
+  `assignments`, `processes`, `conditions` and `cases`.
+- Not in KF-DQ-008:
+  - process roles, scheduling and complete behavioural semantics (KF-DQ-009)
+  - driver, dependency and connectivity graphs (KF-DQ-010)
+  - FSM extraction (KF-DQ-011)
+  - elaboration of generates
+  - timing / PPA and assertions
+
+  KF-DQ-008 records the representation they build on: containers, guards,
+  references and instances.
+
 ---
 
 # 6. Semantic Analysis
@@ -758,7 +961,8 @@ All actions are validated before any is executed, and one unsafe entry aborts th
 
 `manifests/data_manifest.json` is the single authoritative inventory of the
 data repository (`scripts/core/data_manifest.py`, schema
-`kritva-forge-data-manifest` version 1). It is written as JSON because every
+`kritva-forge-data-manifest` version 2 since KF-DQ-008, which added the
+Semantic IR v2 references; see §5.2). It is written as JSON because every
 other machine manifest in the repository is JSON, the standard library
 serialises it byte-deterministically (`sort_keys`), and it parses much faster
 than YAML at about 0.8 MB.
