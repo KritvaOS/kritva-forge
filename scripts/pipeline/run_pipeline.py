@@ -335,6 +335,25 @@ def manifest_gate(data_root):
     return report
 
 
+def semantic_gate(data_root):
+    """Validate every Semantic IR v2 document and write its report (KF-DQ-008).
+
+    Fails on any schema, identity, reference, provenance or inventory problem
+    (no override): the dataset stage must never run on unvalidated semantics.
+    """
+    from scripts.semantic_ir import validator as V
+
+    report = V.check(data_root)
+    V.write_report(data_root, report)
+    print("[INFO] Semantic IR v2 gate")
+    print(V.format_report(report))
+    if report["status"] != "PASS":
+        raise RuntimeError(
+            "Semantic IR v2 gate failed (KF-DQ-008): " + "; ".join(report["problems"][:5])
+        )
+    return report
+
+
 def write_provenance(data_root):
     """Write manifests/provenance_manifest.json and its validation report (KF-DQ-005)."""
     from scripts.core.provenance import (
@@ -447,9 +466,17 @@ def run_pipeline(
         #
         # KF-DQ-006: stale-artifact gate before dataset generation.  The
         # dataset stage consumes canonical IR and generated/prompts, so any
-        # stale, orphan or unmanaged artifact there aborts the run.
+        # stale, orphan or unmanaged artifact there aborts the run (this
+        # includes normalized/semantic_ir/v2, KF-DQ-008).
         #
         stale_gate(data_root, scope="inputs")
+
+        #
+        # KF-DQ-008: Semantic IR v2 gate - full schema/relationship
+        # validation of every document; writes its report, which the
+        # post-run stale gate verifies against the semantic corpus.
+        #
+        semantic_gate(data_root)
 
         generate_datasets(
             normalized_root,
@@ -483,7 +510,8 @@ def run_pipeline(
         manifest_gate(data_root)
 
     check_portable_provenance(
-        [normalized_root, prompt_root, reports_root, datasets_root, splits_root,
+        [normalized_root, os.path.join(os.path.dirname(normalized_root), "semantic_ir"),
+         prompt_root, reports_root, datasets_root, splits_root,
          str(ForgeDataPaths.from_root(data_root).manifests)]
     )
     print("[INFO] Portable provenance OK (no absolute host paths)")
