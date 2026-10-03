@@ -753,6 +753,59 @@ All actions are validated before any is executed, and one unsafe entry aborts th
 
 **Split, provenance and relocation.** The KF-DQ-004 split, the leakage gate and KF-DQ-005 provenance are consumed unchanged. A stale record or split entry fails the gate before it can reach a dataset. Paths are repository-relative, so moving the data repository changes no classification.
 
+
+## 11.4 Canonical Data Manifest
+
+`manifests/data_manifest.json` is the single authoritative inventory of the
+data repository (`scripts/core/data_manifest.py`, schema
+`kritva-forge-data-manifest` version 1). It is written as JSON because every
+other machine manifest in the repository is JSON, the standard library
+serialises it byte-deterministically (`sort_keys`), and it parses much faster
+than YAML at about 0.8 MB.
+
+| Section | Content |
+|---|---|
+| `schema`, `repository`, `generator`, `versions` | Manifest, identity, provenance, leakage, split and artifact schema versions, plus parser and parser version. No timestamp, host, user or PID. |
+| `sources` | Every file under `raw/`, with path, sha256, size, status, role and the modules it feeds. |
+| `modules` | One entry per canonical module: `module_id` (`mod1:`), primary and contributing sources, IR path / sha256 / `ir_content` (`n1:`) / `module_body` (`m1:`), prompt, RTL copy, dataset records and split. |
+| `artifacts` | Every file of the managed tree, with kind, status and sha256. |
+| `records` | Every dataset record: `record_id` (`r1:`), split, ip, module, `module_id`, task, prompt variant. |
+| `splits` | Reference to the split manifest, schema versions, counts and `split_identity` (`sp1:`, over the sorted record/split pairs). |
+| `manifests` | The role of every manifest file. |
+
+Statuses:
+
+- `canonical`: raw RTL and file lists used by canonical modules, plus canonical IR.
+- `generated`: current pipeline outputs.
+- `historical`: KF-DQ-006 historical paths.
+- `deprecated`: reserved; none exist at version 1.
+- `excluded`: present but not a dataset input. This covers unreferenced RTL, documentation, `raw/rtl/curated` and `.gitkeep`.
+
+Manifest roles:
+
+- **Authoritative:** only `data_manifest.json`.
+- **Components, incorporated by reference:** the KF-DQ-005 provenance manifest, the KF-DQ-006 artifact inventory and the KF-DQ-004 split manifest.
+- **Non-canonical:** `datasets/pipeline/manifest.json` (change tracking).
+- **Historical:** the KF-DQ-001 migration manifests.
+
+The manifest is derived from canonical inputs, KF-DQ-005 provenance and the KF-DQ-006 classification. It never reads a previous manifest. Generation is refused while any artifact is STALE, ORPHAN or UNMANAGED, so stale data cannot be listed and removed artifacts disappear. Identity rules are not duplicated: the manifest reuses the KF-DQ-003/004/005 identities, and a source's identity is its content sha256. The manifest does not hash itself. Ordering: sources and artifacts by path, modules by (ip, module), records by `record_id`, keys sorted.
+
+`make check-manifest` (`data_manifest.py --check`) is the **dataset publication gate**. It recomputes the manifest and fails on any of these:
+
+- a missing manifest
+- an unsupported schema or component version
+- an absolute, `..` or non-POSIX path
+- a duplicate path or identity
+- an invalid identity format
+- a missing artifact or a hash mismatch
+- a broken source, IR, prompt or record reference
+- a historical/active misclassification
+- a missing or unexpected entry
+- an invalid KF-DQ-006 inventory
+- a stored manifest that differs from the recomputation
+
+The pipeline writes and validates the manifest after the provenance and stale-artifact gates, writes `analysis/reports/data_manifest_report.json`, and fails on any problem. `KRITVA_FORGE_ALLOW_STALE` does not bypass this gate. `make data-quality` runs every gate.
+
 ---
 
 # 12. Private Data Repository
