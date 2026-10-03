@@ -101,6 +101,13 @@ _INCDIR_RE = re.compile(r"\+incdir\+([^\s]+)")
 # Identity and hashing
 # -----------------------------------------------------------------------------
 
+def load_yaml(text: str):
+    """``yaml.safe_load`` using the libyaml loader when available (same result, faster)."""
+    import yaml
+
+    return yaml.load(text, Loader=getattr(yaml, "CSafeLoader", yaml.SafeLoader))
+
+
 def sha256_bytes(data: bytes) -> str:
     return hashlib.sha256(data).hexdigest()
 
@@ -300,7 +307,7 @@ def build_manifest(data_root: str | os.PathLike[str]) -> dict:
         ip = yaml_path.parent.parent.name
         name = yaml_path.stem
         ir_bytes = yaml_path.read_bytes()
-        spec = yaml.safe_load(ir_bytes.decode("utf-8")) or {}
+        spec = load_yaml(ir_bytes.decode("utf-8")) or {}
         mid = module_id(ip, name)
         for key in ("parser", "parser_version", "identity_version"):
             versions[key].add(str(spec.get(key)))

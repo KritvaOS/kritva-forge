@@ -285,6 +285,34 @@ def check_portable_provenance(roots):
         )
 
 
+def stale_gate(data_root, scope):
+    """Run the KF-DQ-006 stale-artifact gate (``scope`` "inputs" or "all").
+
+    ``scope="all"`` also writes manifests/artifact_inventory.json and
+    analysis/reports/stale_artifact_report.json.  Setting
+    ``KRITVA_FORGE_ALLOW_STALE=1`` turns a failure into a warning; the
+    override is recorded in the written report.
+    """
+    from scripts.core import stale_artifacts as S
+
+    override = os.environ.get(S.OVERRIDE_ENV) == "1"
+    report = S.write(data_root, override=override) if scope == "all" else S.check(data_root, scope="inputs")
+    label = "pre-dataset" if scope == "inputs" else "post-run"
+    print(f"[INFO] Stale artifact gate ({label})")
+    print(S.format_report(report))
+    if report["status"] != "PASS":
+        message = (
+            f"stale artifact gate ({label}) failed (KF-DQ-006): "
+            + "; ".join(report["problems"][:5])
+            + " -- review `python3 scripts/core/stale_artifacts.py --clean` "
+            "(dry run) and regenerate"
+        )
+        if not override:
+            raise RuntimeError(message)
+        print(f"[WARN] {S.OVERRIDE_ENV}=1: continuing despite: {message}")
+    return report
+
+
 def write_provenance(data_root):
     """Write manifests/provenance_manifest.json and its validation report (KF-DQ-005)."""
     from scripts.core.provenance import (
@@ -394,6 +422,13 @@ def run_pipeline(
         print("[INFO] Generating datasets")
         print("=" * 60)
 
+        #
+        # KF-DQ-006: stale-artifact gate before dataset generation.  The
+        # dataset stage consumes canonical IR and generated/prompts, so any
+        # stale, orphan or unmanaged artifact there aborts the run.
+        #
+        stale_gate(data_root, scope="inputs")
+
         generate_datasets(
             normalized_root,
             datasets_root,
@@ -412,6 +447,11 @@ def run_pipeline(
                 "provenance check failed (KF-DQ-005): "
                 + "; ".join(provenance_report["problems"][:10])
             )
+
+        #
+        # KF-DQ-006: artifact inventory + full stale-artifact gate.
+        #
+        stale_gate(data_root, scope="all")
 
     check_portable_provenance(
         [normalized_root, prompt_root, reports_root, datasets_root, splits_root,

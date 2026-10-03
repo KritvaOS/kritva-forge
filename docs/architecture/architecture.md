@@ -666,6 +666,93 @@ Includes are resolved in this order:
 
 `--write` regenerates the manifest in place.
 
+
+## 11.3 Stale Generated Artifacts
+
+`scripts/core/stale_artifacts.py` (`ARTIFACT_SCHEMA_VERSION = 1`) decides,
+deterministically, whether each generated artifact is valid for the current
+canonical data.
+
+**Canonical** artifacts are the inputs and the canonical IR:
+
+- `raw/rtl/original/`
+- `normalized/ir/<ip>/{modules/*.yaml, hierarchy.yaml, summary.yaml, rtl/*}`
+
+**Generated** artifacts are derived from them:
+
+- `generated/prompts/`
+- `analysis/reports/`
+- `datasets/pipeline/`
+- `splits/`
+- `manifests/`
+- `golden/`
+
+Every file under the managed roots is in exactly one state:
+
+| State | Meaning |
+|---|---|
+| `CURRENT` | In the expected inventory and verified against current inputs |
+| `STALE` | Content, schema or identity no longer current, or a superseded duplicate of a canonical artifact (e.g. old `analysis/reports/<ip>/*.yaml`, `generated/rtl/pipeline/*` copies of raw RTL) |
+| `ORPHAN` | Refers to a module, IP or record that no longer exists |
+| `HISTORICAL` | Retained and never consumed: `*/legacy/`, `datasets/source/`, the KF-DQ-001 migration manifests, and quarantined files |
+| `UNMANAGED` | Not part of the output contract, including symlinks and unknown top-level directories |
+
+**Expected inventory.** The expected inventory is computed from three inputs:
+
+- raw RTL
+- the canonical IR
+- the KF-DQ-005 provenance model, recomputed rather than read back
+
+Existing outputs never define what should exist.
+
+**Freshness** is based on identities and recomputation. Filesystem modification time is not used and is not sufficient. The checks are:
+
+- **Prompts:** must equal `generate_module_prompt(<IR>)`.
+- **Canonical IR:** stale when its source sha256 differs from the one recorded in the stored provenance manifest; orphan when its source is missing or no longer declares the module.
+- **Dataset records:** must carry the current provenance version, `record_id`, `module_id`, source sha256 and IR sha256.
+- **Split-manifest entries:** must reference current records.
+- **Manifests and reports:** must carry the current schema version and match a recomputation.
+
+**Outputs:**
+
+- `manifests/artifact_inventory.json`: path, kind, state, ip, module, `module_id`, source sha256 and sha256 for each file.
+- `analysis/reports/stale_artifact_report.json`: counters and the remediation plan.
+
+Both are byte-identical across runs and checkout locations.
+
+**Remediation:**
+
+| Action | Applies to |
+|---|---|
+| `REGENERATE` | Rerun the pipeline: stale expected outputs and canonical IR |
+| `REMOVE` | Orphans and superseded duplicates |
+| `QUARANTINE` | Unmanaged files; moved to `generated/legacy/quarantine/<path>`, which makes them historical |
+| `MANUAL` | Symlinks |
+
+**Commands:**
+
+| Command | Effect |
+|---|---|
+| `make check-stale` | Read-only gate (`stale_artifacts.py --check`) |
+| `make clean-stale` | Dry-run plan |
+| `make clean-stale APPLY=1` | Executes `REMOVE` and `QUARANTINE` and prints every action |
+
+**Cleanup safety.** Cleanup only touches files under `generated/`, `analysis/reports/`, `datasets/pipeline/`, `splits/`, `manifests/` or `golden/`, outside the historical paths. It never touches `raw/` or `normalized/`. It rejects:
+
+- absolute paths, `..` and symlinks
+- anything that resolves outside the data root
+
+All actions are validated before any is executed, and one unsafe entry aborts the cleanup.
+
+**Pipeline gate:**
+
+1. After IR and prompts are regenerated, a pre-dataset gate runs. If any stale, orphan or unmanaged artifact exists, it aborts before datasets, splits or provenance are written.
+2. After all outputs are written, the inventory and report are written and the full gate runs again.
+
+`KRITVA_FORGE_ALLOW_STALE=1` is an explicit override. It is recorded as `override: true` in the report, and the report status stays `FAIL`.
+
+**Split, provenance and relocation.** The KF-DQ-004 split, the leakage gate and KF-DQ-005 provenance are consumed unchanged. A stale record or split entry fails the gate before it can reach a dataset. Paths are repository-relative, so moving the data repository changes no classification.
+
 ---
 
 # 12. Private Data Repository
