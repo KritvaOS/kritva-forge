@@ -313,6 +313,28 @@ def stale_gate(data_root, scope):
     return report
 
 
+def manifest_gate(data_root):
+    """Write manifests/data_manifest.json, validate it, and fail on any problem (KF-DQ-007)."""
+    from scripts.core import data_manifest as M
+
+    try:
+        M.write(data_root)
+    except M.ManifestBlocked as exc:
+        raise RuntimeError(
+            f"data manifest generation refused (KF-DQ-007): {exc}"
+        ) from exc
+    report = M.check(data_root)
+    M.write_report(data_root, report)
+    print("[INFO] Canonical data manifest gate")
+    print(M.format_report(report))
+    if report["status"] != "PASS":
+        raise RuntimeError(
+            "data manifest gate failed (KF-DQ-007); dataset publication blocked: "
+            + "; ".join(report["problems"][:5])
+        )
+    return report
+
+
 def write_provenance(data_root):
     """Write manifests/provenance_manifest.json and its validation report (KF-DQ-005)."""
     from scripts.core.provenance import (
@@ -452,6 +474,13 @@ def run_pipeline(
         # KF-DQ-006: artifact inventory + full stale-artifact gate.
         #
         stale_gate(data_root, scope="all")
+
+        #
+        # KF-DQ-007: canonical data manifest + publication gate.  Runs after
+        # provenance and the stale-artifact gate; a failure blocks
+        # publication of the generated dataset (no override).
+        #
+        manifest_gate(data_root)
 
     check_portable_provenance(
         [normalized_root, prompt_root, reports_root, datasets_root, splits_root,

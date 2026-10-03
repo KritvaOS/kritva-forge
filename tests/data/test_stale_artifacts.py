@@ -284,7 +284,10 @@ def test_case_f_stale_dataset_record_blocks_dataset_generation(tree):
 def test_override_is_explicit_and_recorded(tree, monkeypatch):
     (tree.prompts / "ipa" / "notes.md").write_text("scratch")
     monkeypatch.setenv(S.OVERRIDE_ENV, "1")
-    _run(tree.root)
+    # the override relaxes only the stale gate; the KF-DQ-007 manifest gate
+    # still blocks publication
+    with pytest.raises(RuntimeError, match="KF-DQ-007"):
+        _run(tree.root)
     stored = json.loads((tree.root / S.REPORT_PATH).read_text())
     assert stored["override"] is True and stored["status"] == "FAIL"
 

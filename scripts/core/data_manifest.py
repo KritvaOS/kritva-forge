@@ -1,0 +1,552 @@
+#!/usr/bin/env python3
+# =============================================================================
+# Copyright (c) 2026 KritvaOS
+# SPDX-License-Identifier: Apache-2.0
+#
+# File        : data_manifest.py
+# Description : Canonical data manifest generation, validation and publication gate (KF-DQ-007)
+#
+# Component   : Kritva Forge
+# Module      : core
+# Layer       : Development Infrastructure
+#
+# Author      : Kritva Forge Team
+# Created     : 02-10-2026
+# =============================================================================
+"""Canonical data manifest (KF-DQ-007).
+
+``manifests/data_manifest.json`` is the single authoritative inventory of the
+Kritva Forge data repository (``schema: kritva-forge-data-manifest``,
+``version: MANIFEST_VERSION``).  JSON is the canonical representation: every
+other machine manifest of the repository is JSON, the standard library
+serialises it byte-for-byte deterministically (``sort_keys``), and it parses
+an order of magnitude faster than YAML for a ~1 MB inventory.
+
+Sections (all lists sorted; keys sorted):
+
+``sources``    every file under ``raw/`` - path, sha256, size, status, role,
+               the module identities it feeds (``raw/rtl/original`` RTL and
+               file lists used by canonical modules are ``canonical``; other
+               raw files are ``excluded``: unreferenced RTL, documentation,
+               ``raw/rtl/curated``)
+``modules``    one record per canonical module - ``module_id`` (``mod1:``,
+               KF-DQ-005), primary source and contributing sources, IR path /
+               sha256 / ``ir_content`` (``n1:``) / ``module_body`` (``m1:``,
+               KF-DQ-004), prompt, RTL copy, dataset records and split
+``artifacts``  every file of the managed tree (``normalized``, ``generated``,
+               ``analysis``, ``datasets``, ``splits``, ``manifests``,
+               ``golden``) with kind, status and sha256
+``records``    every dataset record - ``record_id`` (``r1:``), split, ip,
+               module, ``module_id``, task, prompt variant
+``splits``     split manifest reference, schema versions, counts and a split
+               identity ``sp1:`` over the sorted (record_id, split) pairs
+``manifests``  role of every manifest file (exactly one is ``authoritative``)
+
+Status vocabulary: ``canonical`` (inputs and canonical IR), ``generated``
+(current pipeline outputs), ``historical`` (KF-DQ-006 historical paths),
+``deprecated`` (reserved; none at version 1), ``excluded`` (present, not a
+dataset input: unreferenced raw files, curated RTL, ``.gitkeep``).
+
+The manifest is derived from canonical inputs and the KF-DQ-006
+classification, never from an existing manifest.  Generation is refused
+while any artifact is STALE, ORPHAN or UNMANAGED, so stale data can never be
+listed as current.  Identities reuse KF-DQ-003/004/005 definitions; nothing
+in the manifest depends on time, host, user, PID, absolute paths, random
+values or traversal order.  The manifest excludes its own hash.
+
+``--check`` validates the stored manifest (schema, paths, identities,
+hashes, references, classification, completeness, reproducibility) and is
+the dataset publication gate.
+"""
+
+from __future__ import annotations
+
+import argparse
+import hashlib
+import json
+import os
+import re
+import sys
+from collections import Counter, defaultdict
+from pathlib import Path, PurePosixPath
+
+MANIFEST_VERSION = 1
+MANIFEST_NAME = "kritva-forge-data-manifest"
+GENERATOR = "kritva-forge/scripts/core/data_manifest.py v1"
+MANIFEST_PATH = "manifests/data_manifest.json"
+REPORT_PATH = "analysis/reports/data_manifest_report.json"
+STATUSES = ("canonical", "generated", "historical", "deprecated", "excluded")
+RTL_SUFFIXES = (".v", ".sv", ".vh", ".svh")
+
+_SHA = re.compile(r"[0-9a-f]{64}")
+_ID = {
+    "module_id": re.compile(r"mod1:[0-9a-f]{16}"),
+    "record_id": re.compile(r"r1:[0-9a-f]{16}"),
+    "module_body": re.compile(r"m1:[0-9a-f]{16}"),
+    "ir_content": re.compile(r"n1:[0-9a-f]{16}"),
+    "split_identity": re.compile(r"sp1:[0-9a-f]{16}"),
+}
+
+# Manifest files and their role in the canonical model.
+MANIFEST_ROLES = {
+    MANIFEST_PATH: ("authoritative", "canonical data manifest (this file)"),
+    "manifests/provenance_manifest.json": ("component", "KF-DQ-005 provenance, incorporated by reference"),
+    "manifests/artifact_inventory.json": ("component", "KF-DQ-006 artifact classification, incorporated by reference"),
+    "splits/split_manifest.json": ("component", "KF-DQ-004 split assignment, incorporated by reference"),
+    "datasets/pipeline/manifest.json": ("non-canonical", "incremental change tracking of the dataset generator"),
+    "manifests/migration_manifest.json": ("historical", "KF-DQ-001 layout migration record"),
+    "manifests/reorder_manifest.json": ("historical", "KF-DQ-001 layout migration record"),
+    REPORT_PATH: ("report", "KF-DQ-007 manifest validation report"),
+}
+
+_CANONICAL_KINDS = {"canonical_ir", "ip_metadata", "data_manifest"}
+
+
+class ManifestBlocked(RuntimeError):
+    """Manifest generation refused: the data tree is not in a canonical state."""
+
+
+def dumps(obj) -> str:
+    return json.dumps(obj, indent=2, sort_keys=True) + "\n"
+
+
+def _digest(prefix: str, *parts: str) -> str:
+    payload = "\x1f".join(parts)
+    return f"{prefix}:" + hashlib.sha256(payload.encode("utf-8")).hexdigest()[:16]
+
+
+def _artifact_status(entry: dict) -> str:
+    if entry["state"] == "HISTORICAL":
+        return "historical"
+    if entry["kind"] == "placeholder":
+        return "excluded"
+    if entry["kind"] in _CANONICAL_KINDS:
+        return "canonical"
+    return "generated"
+
+
+def _raw_role(rel: str, referenced: dict) -> tuple[str, str]:
+    if rel in referenced:
+        return "canonical", ("filelist" if rel.endswith(".f") else "rtl")
+    if rel.startswith("raw/rtl/curated/"):
+        return "excluded", "curated_rtl"
+    if rel.startswith("raw/rtl/original/") and rel.endswith(RTL_SUFFIXES):
+        return "excluded", "unreferenced_rtl"
+    return "excluded", "documentation_or_other"
+
+
+# -----------------------------------------------------------------------------
+# Generation
+# -----------------------------------------------------------------------------
+
+def build(data_root) -> dict:
+    """Derive the canonical manifest from canonical inputs + KF-DQ-006 classification."""
+    from scripts.core import stale_artifacts as S
+    from scripts.core.provenance import PROVENANCE_VERSION, iter_dataset_records
+    from scripts.dataset.leakage import LEAKAGE_SCHEMA_VERSION, SPLIT_SCHEMA_VERSION, SPLITS
+    from scripts.core.identity import IDENTITY_VERSION
+
+    root = Path(os.path.abspath(data_root))
+    result = S.classify(root)
+    ctx = result.pop("context")
+    blocking = [e for e in result["entries"]
+                if e["state"] in S.FAILING_STATES and e["path"] not in S.SELF_OUTPUTS]
+    if blocking or result["missing"]:
+        problems = [f"{e['state']}: {e['path']} — {e['reason']}" for e in blocking]
+        problems += [f"MISSING: {p}" for p in result["missing"]]
+        raise ManifestBlocked("; ".join(problems[:10]) + (f" (+{len(problems) - 10} more)" if len(problems) > 10 else ""))
+
+    prov = ctx.provenance
+
+    # --- dataset records (the three split files) ---------------------------------
+    records, by_module = [], defaultdict(list)
+    for split, _, rec in iter_dataset_records(root):
+        p = rec["provenance"]
+        records.append({
+            "record_id": p["record_id"], "split": split, "ip": rec["ip"], "module": rec["module"],
+            "module_id": p["module_id"], "task": rec.get("task"), "prompt_variant": rec.get("prompt_variant"),
+        })
+        by_module[(rec["ip"], rec["module"])].append((p["record_id"], split))
+    records.sort(key=lambda r: r["record_id"])
+
+    # --- modules -----------------------------------------------------------------
+    referenced = defaultdict(set)
+    modules = []
+    for m in prov["modules"]:
+        key = (m["ip"], m["module"])
+        for src in m["contributing_sources"]:
+            referenced[src["path"]].add(m["module_id"])
+        recs = sorted(by_module.get(key, []))
+        modules.append({
+            "ip": m["ip"],
+            "module": m["module"],
+            "module_id": m["module_id"],
+            "status": "canonical",
+            "source": {"path": m["source"]["path"], "sha256": m["source"]["sha256"]},
+            "contributing_sources": [s["path"] for s in m["contributing_sources"]],
+            "external_includes": m["external_includes"],
+            "ir": {
+                "path": m["normalized_ir"]["path"],
+                "sha256": m["normalized_ir"]["sha256"],
+                "ir_content": m["normalized_ir"]["ir_content"],
+                "module_body": m["module_body"],
+            },
+            "prompt": f"generated/prompts/{m['ip']}/{m['module']}.generate.txt",
+            "rtl_copy": m["artifacts"][0]["path"] if m["artifacts"] else None,
+            "records": [r for r, _ in recs],
+            "split": sorted({s for _, s in recs})[0] if len({s for _, s in recs}) == 1 else sorted({s for _, s in recs}),
+        })
+    modules.sort(key=lambda m: (m["ip"], m["module"]))
+    # files.f of each IP with canonical modules is a parser input
+    for ip in ctx.ips:
+        flist = f"raw/rtl/original/{ip}/files.f"
+        if (root / flist).is_file():
+            referenced[flist] |= {m["module_id"] for m in modules if m["ip"] == ip}
+
+    # --- sources (all of raw/) ---------------------------------------------------
+    sources = []
+    for dirpath, dirnames, files in os.walk(root / "raw"):
+        dirnames.sort()
+        for name in sorted(files):
+            path = Path(dirpath) / name
+            if path.is_symlink():
+                raise ManifestBlocked(f"symlink in raw/: {path.relative_to(root).as_posix()}")
+            rel = path.relative_to(root).as_posix()
+            status, role = _raw_role(rel, referenced)
+            content = path.read_bytes()
+            sources.append({
+                "path": rel, "sha256": hashlib.sha256(content).hexdigest(), "size": len(content),
+                "status": status, "role": role, "modules": sorted(referenced.get(rel, ())),
+            })
+    sources.sort(key=lambda s: s["path"])
+
+    # --- artifacts (managed tree, from the KF-DQ-006 classification) -----------
+    artifacts = []
+    for e in result["entries"]:
+        item = {"path": e["path"], "kind": e["kind"], "status": _artifact_status(e), "sha256": e["sha256"]}
+        if e.get("module_id"):
+            item["module_id"] = e["module_id"]
+        if e["path"] in MANIFEST_ROLES:
+            item["role"] = MANIFEST_ROLES[e["path"]][0]
+        artifacts.append(item)
+    artifacts.sort(key=lambda a: a["path"])
+
+    # --- splits ----------------------------------------------------------------
+    counts = Counter(r["split"] for r in records)
+    split_pairs = "\n".join(f"{r['record_id']}\t{r['split']}" for r in records)
+    splits = {
+        "split_manifest": "splits/split_manifest.json",
+        "split_schema_version": SPLIT_SCHEMA_VERSION,
+        "leakage_schema_version": LEAKAGE_SCHEMA_VERSION,
+        "counts": {s: counts.get(s, 0) for s in SPLITS},
+        "split_identity": _digest("sp1", "kf-split", "v1", split_pairs),
+    }
+
+    # role table (presence is recorded by the artifact inventory, not here, so
+    # the manifest never depends on the order in which gate outputs are written)
+    manifests = [
+        {"path": path, "role": role, "description": desc}
+        for path, (role, desc) in sorted(MANIFEST_ROLES.items())
+    ]
+
+    status_counts = Counter(a["status"] for a in artifacts) + Counter(s["status"] for s in sources)
+    return {
+        "schema": {"name": MANIFEST_NAME, "version": MANIFEST_VERSION},
+        "repository": {"name": "kritva-forge-data"},
+        "generator": GENERATOR,
+        "versions": {
+            "manifest": MANIFEST_VERSION,
+            "identity": IDENTITY_VERSION,
+            "provenance": PROVENANCE_VERSION,
+            "leakage_schema": LEAKAGE_SCHEMA_VERSION,
+            "split_schema": SPLIT_SCHEMA_VERSION,
+            "artifact_schema": S.ARTIFACT_SCHEMA_VERSION,
+            "parser": prov["pipeline"].get("parser"),
+            "parser_version": prov["pipeline"].get("parser_version"),
+        },
+        "ordering": "sources/artifacts by path; modules by (ip, module); records by record_id; keys sorted",
+        "status_vocabulary": list(STATUSES),
+        "counts": {
+            "ips": len(ctx.ips),
+            "modules": len(modules),
+            "sources": len(sources),
+            "canonical_sources": sum(1 for s in sources if s["status"] == "canonical"),
+            "artifacts": len(artifacts),
+            "dataset_records": len(records),
+            "by_status": dict(sorted(status_counts.items())),
+        },
+        "manifests": manifests,
+        "sources": sources,
+        "modules": modules,
+        "artifacts": artifacts,
+        "records": records,
+        "splits": splits,
+    }
+
+
+def write(data_root) -> Path:
+    root = Path(os.path.abspath(data_root))
+    manifest = build(root)
+    path = root / MANIFEST_PATH
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(dumps(manifest), encoding="utf-8")
+    return path
+
+
+# -----------------------------------------------------------------------------
+# Validation / publication gate
+# -----------------------------------------------------------------------------
+
+def _path_problem(rel) -> str | None:
+    if not isinstance(rel, str) or not rel:
+        return "empty path"
+    if "\\" in rel:
+        return "non-POSIX separator"
+    if rel.startswith("/") or os.path.isabs(rel) or re.match(r"^[A-Za-z]:", rel):
+        return "absolute path"
+    if any(part in ("..", ".") for part in PurePosixPath(rel).parts) or "//" in rel:
+        return "path traversal"
+    return None
+
+
+def check(data_root, manifest: dict | None = None) -> dict:
+    """Validate the stored (or given) manifest against the data tree."""
+    from scripts.core import stale_artifacts as S
+    from scripts.core.paths import find_absolute_paths
+    from scripts.core.provenance import PROVENANCE_VERSION, module_id, sha256_file
+    from scripts.dataset.leakage import LEAKAGE_SCHEMA_VERSION, SPLIT_SCHEMA_VERSION
+
+    root = Path(os.path.abspath(data_root))
+    counters = Counter()
+    problems = []
+
+    def bad(kind, msg):
+        counters[kind] += 1
+        problems.append(msg)
+
+    stored_path = root / MANIFEST_PATH
+    if manifest is None:
+        if not stored_path.is_file():
+            bad("missing_manifest", f"canonical manifest missing: {MANIFEST_PATH}")
+            manifest = {}
+        else:
+            try:
+                manifest = json.loads(stored_path.read_text(encoding="utf-8"))
+            except ValueError as exc:
+                bad("schema", f"manifest is not valid JSON: {exc}")
+                manifest = {}
+
+    # -- schema ----------------------------------------------------------------
+    if manifest:
+        if manifest.get("schema") != {"name": MANIFEST_NAME, "version": MANIFEST_VERSION}:
+            bad("schema", f"unsupported manifest schema {manifest.get('schema')!r}")
+        v = manifest.get("versions") or {}
+        supported = {"provenance": PROVENANCE_VERSION, "leakage_schema": LEAKAGE_SCHEMA_VERSION,
+                     "split_schema": SPLIT_SCHEMA_VERSION, "artifact_schema": S.ARTIFACT_SCHEMA_VERSION}
+        for key, want in supported.items():
+            if v.get(key) != want:
+                bad("schema", f"unsupported {key} version {v.get(key)!r} (expected {want})")
+        for e in manifest.get("artifacts", []) + manifest.get("sources", []):
+            if e.get("status") not in STATUSES:
+                bad("classification", f"{e.get('path')}: invalid status {e.get('status')!r}")
+
+    text = dumps(manifest)
+    for line_no, line in find_absolute_paths(text):
+        bad("absolute_paths", f"absolute path in manifest line {line_no}: {line.strip()[:100]}")
+    if str(root) in text:
+        bad("absolute_paths", "manifest contains the data-root location")
+
+    sources = manifest.get("sources", [])
+    artifacts = manifest.get("artifacts", [])
+    modules = manifest.get("modules", [])
+    records = manifest.get("records", [])
+
+    # -- paths -----------------------------------------------------------------
+    seen_paths = Counter(e.get("path") for e in sources + artifacts)
+    for path, n in sorted(seen_paths.items(), key=lambda kv: str(kv[0])):
+        if n > 1:
+            bad("duplicate_paths", f"duplicate canonical path {path}")
+    for e in sources + artifacts:
+        problem = _path_problem(e.get("path"))
+        if problem:
+            bad("absolute_paths" if problem == "absolute path" else "path_traversal" if problem == "path traversal"
+                else "invalid_paths", f"{e.get('path')!r}: {problem}")
+
+    # -- identities --------------------------------------------------------------
+    for field, entries in (("module_id", modules), ("record_id", records)):
+        ids = Counter(e.get(field) for e in entries)
+        for value, n in ids.items():
+            if n > 1:
+                bad("duplicate_identities", f"duplicate {field} {value}")
+    for m in modules:
+        key = f"{m.get('ip')}/{m.get('module')}"
+        mid = m.get("module_id")
+        if not isinstance(mid, str) or not _ID["module_id"].fullmatch(mid) or mid != module_id(m.get("ip"), m.get("module")):
+            bad("invalid_identities", f"{key}: invalid module identity {mid!r}")
+        ir = m.get("ir") or {}
+        for field in ("ir_content", "module_body"):
+            if not isinstance(ir.get(field), str) or not _ID[field].fullmatch(ir[field]):
+                bad("invalid_identities", f"{key}: invalid {field} {ir.get(field)!r}")
+    for r in records:
+        if not isinstance(r.get("record_id"), str) or not _ID["record_id"].fullmatch(r["record_id"]):
+            bad("invalid_identities", f"invalid record_id {r.get('record_id')!r}")
+    sid = (manifest.get("splits") or {}).get("split_identity")
+    if manifest and (not isinstance(sid, str) or not _ID["split_identity"].fullmatch(sid)):
+        bad("invalid_identities", f"invalid split_identity {sid!r}")
+
+    # -- content -----------------------------------------------------------------
+    for e in sources + artifacts:
+        path, sha = e.get("path"), e.get("sha256")
+        if _path_problem(path):
+            continue
+        if sha is None and path in S.SELF_OUTPUTS:
+            continue                     # gate outputs (incl. this manifest) carry no hash
+        target = root / path
+        if not target.is_file() or target.is_symlink():
+            bad("missing_artifacts", f"listed artifact missing: {path}")
+        elif not isinstance(sha, str) or not _SHA.fullmatch(sha):
+            bad("invalid_hashes", f"{path}: invalid sha256 {sha!r}")
+        elif sha256_file(target) != sha:
+            bad("invalid_hashes", f"{path}: sha256 mismatch")
+
+    # -- references ----------------------------------------------------------------
+    src_by_path = {s.get("path"): s for s in sources}
+    art_by_path = {a.get("path"): a for a in artifacts}
+    rec_by_id = {r.get("record_id"): r for r in records}
+    mod_by_id = {m.get("module_id"): m for m in modules}
+    for m in modules:
+        key = f"{m.get('ip')}/{m.get('module')}"
+        src = (m.get("source") or {}).get("path")
+        if src not in src_by_path or src_by_path[src].get("status") != "canonical":
+            bad("broken_references", f"{key}: source {src!r} is not a canonical source")
+        elif (m.get("source") or {}).get("sha256") != src_by_path[src].get("sha256"):
+            bad("broken_references", f"{key}: source sha256 disagrees with the source inventory")
+        for c in m.get("contributing_sources", []):
+            if c not in src_by_path:
+                bad("broken_references", f"{key}: contributing source {c!r} not in the source inventory")
+        for ref in ((m.get("ir") or {}).get("path"), m.get("prompt"), m.get("rtl_copy")):
+            if ref is not None and ref not in art_by_path:
+                bad("broken_references", f"{key}: artifact {ref!r} not in the artifact inventory")
+        ir_art = art_by_path.get((m.get("ir") or {}).get("path"))
+        if ir_art and ir_art.get("sha256") != (m.get("ir") or {}).get("sha256"):
+            bad("broken_references", f"{key}: IR sha256 disagrees with the artifact inventory")
+        for rid in m.get("records", []):
+            if rid not in rec_by_id:
+                bad("broken_references", f"{key}: dataset record {rid} not in the record inventory")
+    for r in records:
+        m = mod_by_id.get(r.get("module_id"))
+        if m is None or (m.get("ip"), m.get("module")) != (r.get("ip"), r.get("module")):
+            bad("broken_references", f"record {r.get('record_id')}: module {r.get('module_id')} does not resolve")
+
+    # -- classification ------------------------------------------------------------
+    for a in artifacts:
+        hist = S.is_historical(a.get("path", ""))
+        if hist and a.get("status") != "historical":
+            bad("historical_misclassified", f"{a['path']}: historical artifact marked {a.get('status')!r}")
+        if not hist and a.get("status") == "historical":
+            bad("historical_misclassified", f"{a['path']}: active artifact marked historical")
+    for s in sources:
+        if s.get("status") == "canonical" and not str(s.get("path", "")).startswith("raw/rtl/original/"):
+            bad("classification", f"{s.get('path')}: only raw/rtl/original can be a canonical source")
+
+    # -- completeness / reproducibility (recompute from canonical inputs) ---------
+    determinism = "not checked"
+    try:
+        rebuilt = build(root)
+    except ManifestBlocked as exc:
+        bad("stale_references", f"canonical inventory invalid (KF-DQ-006): {exc}")
+        rebuilt = None
+    if rebuilt is not None and manifest:
+        for section, key in (("sources", "path"), ("artifacts", "path"), ("modules", "module_id"),
+                             ("records", "record_id")):
+            want = {e[key] for e in rebuilt[section]}
+            have = {e.get(key) for e in manifest.get(section, [])}
+            for k in sorted(want - have, key=str):
+                bad("missing_expected", f"{section}: expected {k} missing from the manifest")
+            for k in sorted(have - want, key=str):
+                bad("unexpected", f"{section}: unexpected entry {k}")
+        determinism = "reproducible" if dumps(rebuilt) == dumps(manifest) else "differs"
+        if determinism == "differs" and not problems:
+            bad("nondeterministic", "stored manifest differs from the manifest recomputed from canonical inputs")
+
+    report = {
+        "manifest_version": MANIFEST_VERSION,
+        "records_checked": len(sources) + len(artifacts) + len(modules) + len(records),
+        "sources": len(sources),
+        "artifacts": len(artifacts),
+        "modules": len(modules),
+        "dataset_records": len(records),
+        "missing_manifest": counters["missing_manifest"],
+        "missing_expected": counters["missing_expected"],
+        "unexpected": counters["unexpected"],
+        "missing_artifacts": counters["missing_artifacts"],
+        "duplicate_paths": counters["duplicate_paths"],
+        "duplicate_identities": counters["duplicate_identities"],
+        "invalid_hashes": counters["invalid_hashes"],
+        "invalid_identities": counters["invalid_identities"],
+        "invalid_paths": counters["invalid_paths"],
+        "absolute_paths": counters["absolute_paths"],
+        "path_traversal": counters["path_traversal"],
+        "broken_references": counters["broken_references"],
+        "stale_references": counters["stale_references"],
+        "historical_misclassified": counters["historical_misclassified"],
+        "classification_errors": counters["classification"],
+        "schema_errors": counters["schema"],
+        "determinism_status": determinism,
+        "relocation_status": "location-independent" if not counters["absolute_paths"] else "location-dependent",
+        "problems": problems[:200],
+    }
+    report["status"] = "FAIL" if problems else "PASS"
+    return report
+
+
+def format_report(report: dict) -> str:
+    keys = ["records_checked", "sources", "artifacts", "modules", "dataset_records", "missing_expected",
+            "unexpected", "missing_artifacts", "duplicate_paths", "duplicate_identities", "invalid_hashes",
+            "invalid_identities", "absolute_paths", "path_traversal", "broken_references", "stale_references",
+            "historical_misclassified", "classification_errors", "schema_errors", "determinism_status",
+            "relocation_status"]
+    lines = [f"Data manifest check: {report['status']}"]
+    lines += [f"  {k.replace('_', ' '):24s}: {report[k]}" for k in keys]
+    lines += [f"  [FAIL] {p}" for p in report["problems"][:30]]
+    if len(report["problems"]) > 30:
+        lines.append(f"  ... {len(report['problems']) - 30} more")
+    return "\n".join(lines)
+
+
+def write_report(data_root, report: dict) -> Path:
+    path = Path(os.path.abspath(data_root)) / REPORT_PATH
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(dumps(report), encoding="utf-8")
+    return path
+
+
+def main(argv=None) -> int:
+    parser = argparse.ArgumentParser(description="KF-DQ-007 canonical data manifest")
+    parser.add_argument("--data-root", default=os.environ.get("KRITVA_FORGE_DATA_ROOT"))
+    mode = parser.add_mutually_exclusive_group()
+    mode.add_argument("--check", action="store_true", help="validate the stored manifest (default; read-only)")
+    mode.add_argument("--write", action="store_true", help="regenerate the manifest, then validate")
+    parser.add_argument("--json", help="also write the validation report JSON here")
+    args = parser.parse_args(argv)
+    if not args.data_root:
+        from scripts.core.paths import default_data_root
+        args.data_root = str(default_data_root())
+    if args.write:
+        try:
+            write(args.data_root)
+        except ManifestBlocked as exc:
+            print(f"[STOP] manifest generation refused (KF-DQ-006 gate): {exc}")
+            return 1
+        print(f"[INFO] wrote {MANIFEST_PATH}")
+    report = check(args.data_root)
+    print(format_report(report))
+    if args.json:
+        Path(args.json).write_text(dumps(report), encoding="utf-8")
+    return 0 if report["status"] == "PASS" else 1
+
+
+if __name__ == "__main__":
+    if __package__ in (None, ""):
+        sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
+    raise SystemExit(main())

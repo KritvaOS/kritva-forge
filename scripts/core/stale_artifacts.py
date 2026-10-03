@@ -71,6 +71,17 @@ from pathlib import Path, PurePosixPath
 ARTIFACT_SCHEMA_VERSION = 1
 INVENTORY_PATH = "manifests/artifact_inventory.json"
 REPORT_PATH = "analysis/reports/stale_artifact_report.json"
+DATA_MANIFEST_PATH = "manifests/data_manifest.json"        # KF-DQ-007, validated by data_manifest.py
+DATA_MANIFEST_REPORT_PATH = "analysis/reports/data_manifest_report.json"
+# Gate outputs: listed whether or not they exist yet (their hashes are not
+# recorded), so the inventory never depends on itself; each is verified by
+# its own validator.
+SELF_OUTPUTS = {
+    INVENTORY_PATH: "artifact_inventory",
+    REPORT_PATH: "stale_artifact_report",
+    DATA_MANIFEST_PATH: "data_manifest",
+    DATA_MANIFEST_REPORT_PATH: "data_manifest_report",
+}
 QUARANTINE_ROOT = "generated/legacy/quarantine"
 OVERRIDE_ENV = "KRITVA_FORGE_ALLOW_STALE"
 
@@ -104,7 +115,7 @@ DATASET_AUX_RECORD_FILES = ("dataset_new", "dataset_old", "dataset_mixed")
 PIPELINE_OUTPUT_KINDS = frozenset({
     "dataset_split", "dataset_records", "dataset_manifest", "dataset_stats", "split_manifest",
     "provenance_manifest", "provenance_report", "split_leakage_report", "pipeline_stats",
-    "artifact_inventory", "stale_artifact_report",
+    "artifact_inventory", "stale_artifact_report", "data_manifest", "data_manifest_report",
 })
 _PROMPT_RE = re.compile(r"^generated/prompts/([^/]+)/([^/]+)\.generate\.txt$")
 
@@ -242,6 +253,8 @@ class Context:
             "splits/split_manifest.json": "split_manifest",
             "manifests/provenance_manifest.json": "provenance_manifest",
             INVENTORY_PATH: "artifact_inventory",
+            DATA_MANIFEST_PATH: "data_manifest",
+            DATA_MANIFEST_REPORT_PATH: "data_manifest_report",
             "datasets/pipeline/manifest.json": "dataset_manifest",
             "datasets/pipeline/dataset_stats.json": "dataset_stats",
         }
@@ -366,14 +379,14 @@ def classify(data_root, use_recorded: bool = True) -> dict:
             "module": module,
             "module_id": mod_entry["module_id"] if mod_entry else None,
             "source_sha256": mod_entry["source"]["sha256"] if mod_entry else None,
-            "sha256": None if symlink or kind in ("artifact_inventory", "stale_artifact_report")
+            "sha256": None if symlink or kind in SELF_OUTPUTS.values()
             else _sha(path),
             "symlink": symlink,
         })
 
     for rel, symlink in _walk(root):
         top = rel.split("/", 1)[0]
-        if rel in (INVENTORY_PATH, REPORT_PATH) and not symlink:
+        if rel in SELF_OUTPUTS and not symlink:
             continue                    # KF-DQ-006 outputs: added below, presence-independent
         if top in CANONICAL_INPUT_ROOTS:
             continue
@@ -549,7 +562,7 @@ def classify(data_root, use_recorded: bool = True) -> dict:
 
     # KF-DQ-006 outputs are listed whether or not they exist yet, so the
     # inventory does not depend on itself; check() verifies their content.
-    for rel, kind in ((INVENTORY_PATH, "artifact_inventory"), (REPORT_PATH, "stale_artifact_report")):
+    for rel, kind in sorted(SELF_OUTPUTS.items()):
         if not (root / rel).is_symlink():
             entries.append({"path": rel, "kind": kind, "state": "CURRENT", "reason": None, "ip": None,
                             "module": None, "module_id": None, "source_sha256": None, "sha256": None,
@@ -557,7 +570,7 @@ def classify(data_root, use_recorded: bool = True) -> dict:
 
     present = {e["path"] for e in entries}
     missing = sorted(p for p, (kind, _, _) in expected.items()
-                     if p not in present and kind not in ("artifact_inventory", "stale_artifact_report"))
+                     if p not in present and kind not in SELF_OUTPUTS.values())
 
     # absolute / non-portable paths inside text artifacts of the active tree
     for e in entries:
@@ -571,7 +584,8 @@ def classify(data_root, use_recorded: bool = True) -> dict:
     for e in entries:
         e["remediation"] = remediation(e)
     entries.sort(key=lambda e: e["path"])
-    return {"entries": entries, "missing": missing, "counters": counters, "expected": len(expected)}
+    return {"entries": entries, "missing": missing, "counters": counters, "expected": len(expected),
+            "context": ctx}
 
 
 def remediation(entry: dict) -> str:
