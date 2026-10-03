@@ -28,7 +28,7 @@ DATASET_DIR ?= $(DATA_ROOT)/datasets/pipeline
 CURATED_DIR ?=
 PROJECT ?= $(NORMALIZED_DIR)
 
-.PHONY: help venv setup test test-data check-layout check-leakage check-provenance data-quality compile pipeline headers git_sync clean
+.PHONY: help venv setup test test-data check-layout check-leakage check-provenance check-stale clean-stale data-quality compile pipeline headers git_sync clean
 
 help:
 	@echo "Kritva Forge targets:"
@@ -38,7 +38,9 @@ help:
 	@echo "  make check-layout - fail if non-canonical module YAMLs exist in NORMALIZED_DIR"
 	@echo "  make check-leakage - fail if dataset splits leak (needs DATA_ROOT)"
 	@echo "  make check-provenance - validate the RTL provenance manifest (needs DATA_ROOT)"
-	@echo "  make data-quality - test-data + check-layout + check-leakage + check-provenance"
+	@echo "  make check-stale - fail on stale/orphan/unmanaged generated artifacts (read-only)"
+	@echo "  make clean-stale - list stale-artifact cleanup actions (dry run; APPLY=1 executes)"
+	@echo "  make data-quality - test-data + check-layout + check-leakage + check-provenance + check-stale"
 	@echo "  make compile     - syntax-check Python sources"
 	@echo "  make headers     - validate KritvaOS source headers"
 	@echo "  make pipeline    - parse RTL and generate normalized IR/datasets"
@@ -80,7 +82,13 @@ check-leakage: setup
 check-provenance: setup
 	PYTHONPATH=. $(PYTHON) scripts/core/provenance.py --check --data-root "$(DATA_ROOT)"
 
-data-quality: test-data check-layout check-leakage check-provenance
+check-stale: setup
+	PYTHONPATH=. $(PYTHON) scripts/core/stale_artifacts.py --check --data-root "$(DATA_ROOT)"
+
+clean-stale: setup
+	PYTHONPATH=. $(PYTHON) scripts/core/stale_artifacts.py --clean $(if $(APPLY),--apply,) --data-root "$(DATA_ROOT)"
+
+data-quality: test-data check-layout check-leakage check-provenance check-stale
 
 headers:
 	python3 scripts/lint/check_source_headers.py --mode tracked --strict
