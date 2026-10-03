@@ -75,6 +75,8 @@ DATA_MANIFEST_PATH = "manifests/data_manifest.json"        # KF-DQ-007, validate
 DATA_MANIFEST_REPORT_PATH = "analysis/reports/data_manifest_report.json"
 SEMANTIC_REPORT_PATH = "analysis/reports/semantic_ir_report.json"   # KF-DQ-008 semantic gate
 SEMANTIC_DIR = "normalized/semantic_ir/v2"                          # KF-DQ-008 canonical Semantic IR
+BEHAVIOR_DIR = "normalized/behavior/v1"                             # KF-DQ-009 Behavioral Semantics
+BEHAVIOR_REPORT_PATH = "analysis/reports/behavior_report.json"      # KF-DQ-009 behavior gate
 # Gate outputs: listed whether or not they exist yet (their hashes are not
 # recorded), so the inventory never depends on itself; each is verified by
 # its own validator.
@@ -118,7 +120,7 @@ PIPELINE_OUTPUT_KINDS = frozenset({
     "dataset_split", "dataset_records", "dataset_manifest", "dataset_stats", "split_manifest",
     "provenance_manifest", "provenance_report", "split_leakage_report", "pipeline_stats",
     "artifact_inventory", "stale_artifact_report", "data_manifest", "data_manifest_report",
-    "semantic_ir_report",
+    "semantic_ir_report", "behavior_report",
 })
 _PROMPT_RE = re.compile(r"^generated/prompts/([^/]+)/([^/]+)\.generate\.txt$")
 
@@ -243,6 +245,7 @@ class Context:
             exp[f"normalized/ir/{ip}/modules/{mod}.yaml"] = ("canonical_ir", ip, mod)
             exp[f"generated/prompts/{ip}/{mod}.generate.txt"] = ("prompt", ip, mod)
             exp[f"{SEMANTIC_DIR}/{ip}/{mod}.json"] = ("semantic_ir", ip, mod)          # KF-DQ-008
+            exp[f"{BEHAVIOR_DIR}/{ip}/{mod}.json"] = ("behavior", ip, mod)             # KF-DQ-009
         for ip in self.ips:
             exp[f"normalized/ir/{ip}/hierarchy.yaml"] = ("ip_metadata", ip, None)
             exp[f"normalized/ir/{ip}/summary.yaml"] = ("ip_metadata", ip, None)
@@ -254,6 +257,7 @@ class Context:
             "analysis/reports/split_leakage_report.json": "split_leakage_report",
             "analysis/reports/provenance_report.json": "provenance_report",
             SEMANTIC_REPORT_PATH: "semantic_ir_report",
+            BEHAVIOR_REPORT_PATH: "behavior_report",
             REPORT_PATH: "stale_artifact_report",
             "splits/split_manifest.json": "split_manifest",
             "manifests/provenance_manifest.json": "provenance_manifest",
@@ -437,6 +441,9 @@ def classify(data_root, use_recorded: bool = True) -> dict:
             elif kind == "semantic_ir":
                 state, reason = _semantic_state(ctx, path, ip, mod, counters)
                 add(rel, kind, state, reason, ip, mod)
+            elif kind == "behavior":
+                state, reason = _behavior_state(ctx, root, path, ip, mod, counters)
+                add(rel, kind, state, reason, ip, mod)
             elif kind == "ip_metadata":
                 state = "CURRENT" if ip in ctx.raw_ips else "ORPHAN"
                 add(rel, kind, state, None if state == "CURRENT" else f"IP {ip} has no raw RTL", ip)
@@ -447,7 +454,14 @@ def classify(data_root, use_recorded: bool = True) -> dict:
                     None if ok else "RTL copy differs from its canonical source", ip)
             else:
                 parts = rel.split("/")
-                if len(parts) >= 2 and parts[1] == "semantic_ir":
+                if len(parts) >= 2 and parts[1] == "behavior":
+                    if rel.startswith(BEHAVIOR_DIR + "/") and len(parts) == 5 and parts[4].endswith(".json"):
+                        add(rel, "behavior", "ORPHAN",
+                            f"module {parts[3]}/{parts[4][:-5]} has no canonical IR", parts[3])
+                    else:
+                        add(rel, "behavior_other", "UNMANAGED",
+                            f"not part of the Behavioral Semantics layout ({BEHAVIOR_DIR}/<ip>/<module>.json)")
+                elif len(parts) >= 2 and parts[1] == "semantic_ir":
                     if rel.startswith(SEMANTIC_DIR + "/") and len(parts) == 5 and parts[4].endswith(".json"):
                         add(rel, "semantic_ir", "ORPHAN",
                             f"module {parts[3]}/{parts[4][:-5]} has no canonical IR", parts[3])
@@ -571,6 +585,9 @@ def classify(data_root, use_recorded: bool = True) -> dict:
         elif kind == "semantic_ir_report":
             state, reason = _semantic_report_state(root, path)
             add(rel, kind, state, reason)
+        elif kind == "behavior_report":
+            state, reason = _behavior_report_state(root, path)
+            add(rel, kind, state, reason)
         elif kind == "pipeline_stats":
             data = _load_json(path)
             ok = isinstance(data, dict) and data.get("ips") == len(ctx.ips) and data.get("modules") == len(ctx.modules)
@@ -651,6 +668,71 @@ def _semantic_report_state(root: Path, path: Path) -> tuple[str, str | None]:
     return "CURRENT", None
 
 
+def _behavior_state(ctx, root: Path, path: Path, ip, mod, counters) -> tuple[str, str | None]:
+    """KF-DQ-009: a Behavioral Semantics v1 document is CURRENT only if it was derived from the
+    current Semantic IR v2 document (sha256), re-analysis reproduces it byte for byte and it validates."""
+    import hashlib
+
+    from scripts.behavior import analyzer as BA
+    from scripts.behavior import model as BM
+    from scripts.behavior.validator import validate_module
+
+    current = ctx.modules[(ip, mod)]
+    if not ctx.module_ok(ip, mod):
+        counters["invalid_source_identities"] += 1
+        return "ORPHAN", f"source {current['source']['path']} missing ({current['transformation']})"
+    text = path.read_text(encoding="utf-8", errors="replace")
+    try:
+        doc = json.loads(text)
+    except ValueError:
+        return "STALE", "unreadable Behavioral Semantics document"
+    if not isinstance(doc, dict) or doc.get("schema") != {"name": BM.SCHEMA_NAME, "version": BM.SCHEMA_VERSION}:
+        counters["obsolete_schema"] += 1
+        return "STALE", f"obsolete behavioral schema {doc.get('schema') if isinstance(doc, dict) else None!r}"
+    m = doc.get("module") or {}
+    if m.get("module_id") != current["module_id"] or m.get("ip") != ip or m.get("name") != mod:
+        counters["invalid_module_identities"] += 1
+        return "STALE", "module identity does not match the canonical module"
+    srel = BA.semantic_rel(ip, mod)
+    spath = root / srel
+    if not spath.is_file():
+        counters["invalid_behavior"] += 1
+        return "STALE", f"Semantic IR input {srel} missing"
+    raw = spath.read_bytes()
+    ssha = hashlib.sha256(raw).hexdigest()
+    if (m.get("semantic_ir") or {}).get("sha256") != ssha or (m.get("source") or {}).get("sha256") != current["source"]["sha256"]:
+        counters["invalid_behavior"] += 1
+        return "STALE", "derived from an older Semantic IR / source revision"
+    try:
+        sem = json.loads(raw)
+        fresh = BM.dumps(BA.analyze(sem, srel, ssha))
+    except Exception as exc:                                  # noqa: BLE001 - reported as STALE
+        counters["invalid_behavior"] += 1
+        return "STALE", f"Semantic IR input not analysable: {exc}"[:300]
+    if fresh != text:
+        counters["invalid_behavior"] += 1
+        return "STALE", "differs from a re-analysis of the current Semantic IR"
+    problems = validate_module(doc, sem, ssha)
+    if problems:
+        counters["invalid_behavior"] += 1
+        return "STALE", f"fails Behavioral Semantics validation: [{problems[0][0]}] {problems[0][1]}"[:300]
+    return "CURRENT", None
+
+
+def _behavior_report_state(root: Path, path: Path) -> tuple[str, str | None]:
+    from scripts.behavior import model as BM
+    from scripts.behavior.validator import corpus_sha256
+
+    rep = _load_json(path)
+    if not isinstance(rep, dict) or rep.get("schema") != {"name": BM.SCHEMA_NAME, "version": BM.SCHEMA_VERSION}:
+        return "STALE", "missing or obsolete behavioral schema"
+    if rep.get("status") != "PASS":
+        return "STALE", "behavior gate did not pass"
+    if rep.get("corpus_sha256") != corpus_sha256(root):
+        return "STALE", "Behavioral Semantics corpus changed since this report was written"
+    return "CURRENT", None
+
+
 def remediation(entry: dict) -> str:
     state, rel = entry["state"], entry["path"]
     if state in ("CURRENT", "HISTORICAL"):
@@ -717,6 +799,7 @@ def build_report(result: dict, inventory_status: str | None, override: bool = Fa
         "invalid_module_identities": c["invalid_module_identities"],
         "missing_ir_references": c["missing_ir_references"],
         "invalid_semantic_ir": c["invalid_semantic_ir"],
+        "invalid_behavior": c["invalid_behavior"],
         "obsolete_schema": c["obsolete_schema"],
         "absolute_paths": c["absolute_paths"],
         "symlinks": c["symlinks"],
@@ -774,7 +857,7 @@ def write(data_root, override: bool = False) -> dict:
 def format_report(report: dict) -> str:
     rows = ["artifact_records_checked", "expected_artifacts", "current", "stale", "orphan", "historical",
             "unmanaged", "missing_expected", "duplicate_artifacts", "invalid_provenance",
-            "invalid_source_identities", "invalid_module_identities", "missing_ir_references", "invalid_semantic_ir",
+            "invalid_source_identities", "invalid_module_identities", "missing_ir_references", "invalid_semantic_ir", "invalid_behavior",
             "obsolete_schema", "absolute_paths", "symlinks", "dataset_records_checked",
             "split_records_checked", "cleanup_candidates", "remediation_counts", "inventory_status"]
     lines = [f"Stale artifact check: {report['status']}" + (" (override)" if report.get("override") else "")]
