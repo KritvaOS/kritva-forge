@@ -28,7 +28,7 @@ DATASET_DIR ?= $(DATA_ROOT)/datasets/pipeline
 CURATED_DIR ?=
 PROJECT ?= $(NORMALIZED_DIR)
 
-.PHONY: help venv setup test test-data check-layout check-leakage check-provenance check-stale clean-stale check-manifest check-semantic data-quality compile pipeline headers git_sync clean
+.PHONY: help venv setup test test-data check-layout check-leakage check-provenance check-stale clean-stale check-manifest check-semantic check-behavior behavior data-quality compile pipeline headers git_sync clean
 
 help:
 	@echo "Kritva Forge targets:"
@@ -42,7 +42,9 @@ help:
 	@echo "  make clean-stale - list stale-artifact cleanup actions (dry run; APPLY=1 executes)"
 	@echo "  make check-manifest - validate the canonical data manifest (publication gate)"
 	@echo "  make check-semantic - validate the Semantic IR v2 corpus (schema, identities, references)"
-	@echo "  make data-quality - test-data + layout + leakage + provenance + semantic + stale + manifest gates"
+	@echo "  make behavior       - regenerate Behavioral Semantics v1 from Semantic IR v2"
+	@echo "  make check-behavior - validate the Behavioral Semantics v1 corpus (evidence, consistency)"
+	@echo "  make data-quality - test-data + layout + leakage + provenance + semantic + behavior + stale + manifest gates"
 	@echo "  make compile     - syntax-check Python sources"
 	@echo "  make headers     - validate KritvaOS source headers"
 	@echo "  make pipeline    - parse RTL and generate normalized IR/datasets"
@@ -96,7 +98,13 @@ check-manifest: setup
 check-semantic: setup
 	PYTHONPATH=. $(PYTHON) scripts/semantic_ir/validator.py --check --data-root "$(DATA_ROOT)"
 
-data-quality: test-data check-layout check-leakage check-provenance check-semantic check-stale check-manifest
+behavior: setup
+	PYTHONPATH=. $(PYTHON) scripts/behavior/analyzer.py --write --data-root "$(DATA_ROOT)"
+
+check-behavior: setup
+	PYTHONPATH=. $(PYTHON) scripts/behavior/validator.py --check --data-root "$(DATA_ROOT)"
+
+data-quality: test-data check-layout check-leakage check-provenance check-semantic check-behavior check-stale check-manifest
 
 headers:
 	python3 scripts/lint/check_source_headers.py --mode tracked --strict

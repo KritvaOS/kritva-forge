@@ -354,6 +354,38 @@ def semantic_gate(data_root):
     return report
 
 
+def write_behavior(data_root):
+    """Derive Behavioral Semantics v1 from the persisted Semantic IR v2 (KF-DQ-009).
+
+    Runs before the pre-dataset stale gate, so the gate sees behavioral
+    documents derived from the Semantic IR written in this run.  Fails closed
+    on missing or unsupported Semantic IR input.
+    """
+    from scripts.behavior import analyzer as A
+
+    try:
+        res = A.write_all(data_root)
+    except A.AnalysisError as exc:
+        raise RuntimeError(f"behavioral analysis refused (KF-DQ-009): {exc}") from exc
+    print(f"[INFO] Behavioral Semantics v1: {res['documents']} documents")
+    return res
+
+
+def behavior_gate(data_root):
+    """Validate every Behavioral Semantics v1 document and write its report (KF-DQ-009; no override)."""
+    from scripts.behavior import validator as V
+
+    report = V.check(data_root)
+    V.write_report(data_root, report)
+    print("[INFO] Behavioral Semantics v1 gate")
+    print(V.format_report(report))
+    if report["status"] != "PASS":
+        raise RuntimeError(
+            "Behavioral Semantics v1 gate failed (KF-DQ-009): " + "; ".join(report["problems"][:5])
+        )
+    return report
+
+
 def write_provenance(data_root):
     """Write manifests/provenance_manifest.json and its validation report (KF-DQ-005)."""
     from scripts.core.provenance import (
@@ -467,8 +499,10 @@ def run_pipeline(
         # KF-DQ-006: stale-artifact gate before dataset generation.  The
         # dataset stage consumes canonical IR and generated/prompts, so any
         # stale, orphan or unmanaged artifact there aborts the run (this
-        # includes normalized/semantic_ir/v2, KF-DQ-008).
+        # includes normalized/semantic_ir/v2, KF-DQ-008, and
+        # normalized/behavior/v1, KF-DQ-009, derived just before the gate).
         #
+        write_behavior(data_root)
         stale_gate(data_root, scope="inputs")
 
         #
@@ -477,6 +511,12 @@ def run_pipeline(
         # post-run stale gate verifies against the semantic corpus.
         #
         semantic_gate(data_root)
+
+        #
+        # KF-DQ-009: Behavioral Semantics v1 gate (schema, references,
+        # classification evidence, consistency with Semantic IR, re-analysis).
+        #
+        behavior_gate(data_root)
 
         generate_datasets(
             normalized_root,
@@ -511,6 +551,7 @@ def run_pipeline(
 
     check_portable_provenance(
         [normalized_root, os.path.join(os.path.dirname(normalized_root), "semantic_ir"),
+         os.path.join(os.path.dirname(normalized_root), "behavior"),
          prompt_root, reports_root, datasets_root, splits_root,
          str(ForgeDataPaths.from_root(data_root).manifests)]
     )

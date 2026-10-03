@@ -461,6 +461,206 @@ never published. A version-1 manifest is rejected and regenerated.
   KF-DQ-008 records the representation they build on: containers, guards,
   references and instances.
 
+## 5.3 Behavioral Semantics v1 (KF-DQ-009)
+
+**Purpose.** Semantic IR v2 (§5.2) records *what is written*: processes,
+events, assignments, conditions, cases and references. Behavioral Semantics
+v1 interprets those structures as hardware behaviour: process roles, clocks,
+resets, registers, enables, holds, priority, combinational completeness,
+latches and state candidates. It supplies the documented behavioural
+contract that structural analysis (KF-DQ-010), FSM integration (KF-DQ-011)
+and behaviour-aware datasets (KF-DQ-012/013) consume.
+
+**Dependency and location.** The flow is RTL → Semantic IR v2 → Behavioral
+Semantics v1.
+
+- `scripts/behavior/analyzer.py` reads only the persisted Semantic IR v2 JSON.
+  It does not parse RTL, does not use parser objects, and does not copy
+  Semantic IR expression trees; records refer to `sem1:` identities instead.
+- Semantic IR documents are never modified.
+- Output is one document per canonical module at
+  `normalized/behavior/v1/<ip>/<module>.json`, with
+  `schema: {name: kritva-forge-behavioral-semantics, version: 1}`.
+- Each document's `versions` block gives the behavioral schema (1), the
+  behavioral identity (1, `beh1:`), the consumed Semantic IR schema (2) and
+  the Semantic IR identity (1).
+- `module` carries the `mod1:` module identity, the Semantic IR module
+  identity, the RTL source path and sha256, and the path and sha256 of the
+  analysed Semantic IR document.
+- Serialisation is canonical: sorted keys, compact separators, trailing
+  newline.
+
+**Sections.**
+
+| Section | Content |
+|---|---|
+| `processes` | one record per Semantic IR process: `role`, `confidence`, evidence, read/write summary (`reads`, `writes`, `conditional_reads`, `conditional_writes`, `registered_targets`, `combinational_targets`, `latch_targets`), clocks, resets, registers, enables, holds, and the process's conditions, cases and assignments |
+| `clocks` | signal, edge, event index, status (confirmed / candidate / ambiguous), evidence, location |
+| `resets` | signal, kind (async / sync), polarity (active_high / active_low), status, the `if` condition and branch, priority rank, per-target reset assignments, evidence |
+| `registers` | register candidates of sequential processes: clock, resets, assignment kinds, ordered assignments with guards and `overridden_by`, `update`, `hold`, priority leaves, enables, holds, next values |
+| `next_values` | each non-reset, non-hold update: assignment, guards, value kind (constant / expression), value references |
+| `enables` | a condition whose one branch updates the register while the other branch only holds it: update/hold branch, explicit or implicit hold |
+| `holds` | explicit holds (`q <= q`, including a default hold before a conditional update) and implicit holds (the missing branch) with their guard path |
+| `combinational` | each target of a combinational or latch process: completeness (complete / conditional / incomplete / ambiguous), missing branches, latch status, ordered assignments |
+| `latches` | targets whose latch status is explicit (`always_latch`), inferred (incomplete), possible (case without default) or ambiguous |
+| `candidates` | `state_candidate` and `next_value_candidate` records. No FSM is built. |
+
+**Process roles** are `sequential`, `combinational`, `latch`,
+`initialization`, `generic`, `unknown` or `ambiguous`. They are derived from
+the keyword, the event structure, the assignment kinds and the assignment
+completeness:
+
+| Process | Role | Confidence |
+|---|---|---|
+| `always_ff` with edge events | sequential | high when all assignments are nonblocking, otherwise medium |
+| plain `always` with edge events | sequential | medium when all assignments are nonblocking, otherwise low |
+| `always_comb` | combinational | high; medium when a target is not completely assigned |
+| `always_latch` | latch | high |
+| `@*`, or a level list that covers every signal read | combinational | medium; low when a target is only conditionally or ambiguously assigned |
+| `@*` or complete level list with an incomplete target | latch (inferred) | medium |
+| level list that misses a read signal | generic | low |
+| no event control (procedural timing) | generic | low or unknown |
+| mixed edge and level events, or keyword/event conflicts | ambiguous | unknown |
+| `initial` / `final` | initialization | high |
+
+Opaque (unsupported) statements lower confidence by one level. Confidence
+reflects how complete the evidence is. Every non-unknown classification
+carries `evidence`: `{code, refs}` items whose codes come from a fixed
+vocabulary and whose refs are Semantic IR identities.
+
+**Clocks and resets.** These come from event and control structure, never
+from names.
+
+- **Asynchronous reset:** an event signal tested by the leading `if` /
+  `else if` chain, whose branch assigns only constants. It is **confirmed**
+  when the edge agrees with the polarity (negedge ↔ `!rst`, posedge ↔
+  `rst`), and **ambiguous** otherwise.
+- **Clock:** the remaining edge-event signal. It is **confirmed** when it is
+  not read in the process body.
+- **Synchronous reset:** in a single-clock process, a leading `if` on a 1-bit
+  non-clock signal with a constant-only branch and an `else` branch. It is
+  always a **candidate**, because structure alone cannot tell it apart from
+  a constant load.
+- **Polarity** comes from the test form: `s`, `!s`, `~s`, `s == 0/1`,
+  `s != 0/1`.
+
+**Registers, priority, enables and holds.** Each register gets priority
+*leaves* in if-else order:
+
+- `reset` (under the reset branch),
+- `update`,
+- `hold_explicit`,
+- `hold_implicit` (a branch that leaves the register unassigned).
+
+Ranks preserve nested-condition priority, so `if (rst) … else if (en) …
+else q <= q` gives reset > enable > hold. Reset leaves always rank first.
+
+`update` is classified as unconditional, conditional, case, mixed or
+reset_only. `hold` is none, explicit, implicit, mixed or ambiguous; it is
+ambiguous when an opaque statement or loop prevents a decision.
+
+**Combinational completeness** is computed over the control-path lattice
+`none < partial < unknown < conditional < full`:
+
+- an `if` without `else` makes a target incomplete;
+- a `case` without `default` whose items all assign makes it conditional,
+  because the selector coverage is unknown;
+- slice writes and loops make it ambiguous;
+- an earlier whole assignment covers later missing branches.
+
+**State candidates** are conservative and never decided by name. All of the
+following must hold:
+
+- the register has a finite width of 2–64 bits;
+- it has no arithmetic self-feedback (counters are excluded);
+- **one of:**
+  - **one-process:** the register selects (case selector or `if` predicate)
+    updates of itself to at least two distinct constants;
+  - **two-process:** the register's next value is a single combinational
+    signal whose assignments are selected by the register and take at least
+    two distinct constants. That signal becomes a `next_value_candidate`.
+
+KF-DQ-009 does not build a transition graph, classify encodings or score
+FSMs; that is KF-DQ-011.
+
+**Naming guardrail.** Names such as `*_clk`, `*_rst`, `*_next` and `state`
+only add a descriptive `name_hint` evidence item. The validator rejects any
+classification whose only evidence is `name_hint`.
+
+**Identity and provenance.** Every behavioral object has
+`id = "beh1:" + sha256("kf-beh", "v1", category, anchor, qualifier)[:16]`,
+where the anchor is a Semantic IR v2 identity (process, signal, statement or
+assignment). Identities are therefore stable across runs and relocation.
+Every record carries `loc` (repository-relative file:line:col) and, where
+applicable, `semantic` (the `sem1:` identities it was derived from).
+
+**Validation and gates.** `scripts/behavior/validator.py` (also
+`make check-behavior`, run by `data-quality`) fails closed. Per document it
+checks:
+
+- schema and versions
+- required fields and enumerations
+- `beh1:` identities and duplicates
+- provenance and portability
+- canonical ordering
+- evidence presence and the naming-only rule
+- role/evidence consistency, for example: a sequential role needs edge
+  evidence; high confidence needs `always_ff` and nonblocking assignments;
+  a combinational process may have no edges
+- clock/event agreement (index, edge, signal)
+- reset agreement (signal, polarity and event-list membership against the
+  `if` test)
+- register / combinational / latch consistency with the process role
+- the enable ↔ hold relationship and explicit holds being real
+  self-assignments
+- reset-first priority
+- consistency with the Semantic IR document: module, source, sha256, the
+  process set and every assignment and statement reference
+- counts
+
+Corpus checks:
+
+- one document per canonical module
+- canonical bytes
+- re-analysis of the current Semantic IR reproduces the document byte for
+  byte
+- the Semantic IR input exists
+
+The report is written to `analysis/reports/behavior_report.json` with a
+`corpus_sha256`.
+
+**Pipeline.**
+
+1. The parse step writes v1 IR and Semantic IR v2.
+2. **Behavioral analysis** runs.
+3. The pre-dataset stale gate runs. A behavioral document is CURRENT only
+   when it was derived from the current Semantic IR (sha256), re-analysis
+   reproduces it, and it validates. Documents for non-canonical modules are
+   ORPHAN, and any other file there is UNMANAGED.
+4. The Semantic IR gate runs.
+5. The **behavior gate** runs (no override).
+6. Datasets, provenance, the post-run stale gate and the manifest gate run.
+
+`make behavior` regenerates Behavioral Semantics v1 alone, and
+`make pipeline` regenerates everything.
+
+**Data manifest (version 3).** Each module gains
+`behavior {path, sha256, schema_version, identity_version, module_id, status,
+derived_from {semantic_ir, semantic_ir_sha256}}`, and the manifest's
+`versions` gain `behavior` and `behavior_identity`.
+
+**Boundaries.**
+
+- **Not in KF-DQ-009:**
+  - signal, process or transitive dependency graphs and structural
+    connectivity (KF-DQ-010)
+  - FSM extraction, transition graphs, encodings and FSM confidence
+    (KF-DQ-011)
+  - synthesis-equivalent scheduling
+- **What KF-DQ-009 provides for those tasks:** the process read/write
+  summaries, register / next-value / state candidates and evidence.
+- **Unchanged:** Semantic IR v2, v1 IR, prompts, datasets and splits.
+
 ---
 
 # 6. Semantic Analysis
@@ -961,8 +1161,9 @@ All actions are validated before any is executed, and one unsafe entry aborts th
 
 `manifests/data_manifest.json` is the single authoritative inventory of the
 data repository (`scripts/core/data_manifest.py`, schema
-`kritva-forge-data-manifest` version 2 since KF-DQ-008, which added the
-Semantic IR v2 references; see §5.2). It is written as JSON because every
+`kritva-forge-data-manifest` version 3: version 2 (KF-DQ-008) added the
+Semantic IR v2 references, see §5.2; version 3 (KF-DQ-009) added the
+Behavioral Semantics v1 references, see §5.3). It is written as JSON because every
 other machine manifest in the repository is JSON, the standard library
 serialises it byte-deterministically (`sort_keys`), and it parses much faster
 than YAML at about 0.8 MB.
