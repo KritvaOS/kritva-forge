@@ -117,7 +117,7 @@ def test_pipeline_writes_single_valid_canonical_manifest(built):
     assert report["status"] == "PASS", report["problems"]
     assert M.check(built.root)["status"] == "PASS"
     m = _load(built)
-    assert m["schema"] == {"name": "kritva-forge-data-manifest", "version": 4}
+    assert m["schema"] == {"name": "kritva-forge-data-manifest", "version": 5}
     assert m["repository"] == {"name": "kritva-forge-data"}
     assert set(m["versions"]) >= {"manifest", "identity", "provenance", "leakage_schema", "split_schema",
                                   "artifact_schema"}

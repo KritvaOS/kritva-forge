@@ -675,7 +675,7 @@ implementing any FSM logic.
 **Data flow.**
 
 ```text
-Raw RTL -> Semantic IR v2 -> Behavioral Semantics v1 -> Structural Analysis v1 -> (KF-DQ-011 FSM) -> datasets
+Raw RTL -> Semantic IR v2 -> Behavioral Semantics v1 -> Structural Analysis v1 -> FSM Analysis v1 (§5.5) -> datasets
 ```
 
 - `scripts/structural/analyzer.py` reads the persisted Semantic IR v2 and
@@ -805,6 +805,191 @@ enables, holds, resets) but implements no FSM extraction, encoding or
 transition logic, no timing / PPA, no elaboration of generates and no
 flattening of the hierarchy.
 
+## 5.5 FSM Analysis v1 (KF-DQ-011)
+
+**Purpose.** Structural Analysis (§5.4) records *how the hardware is
+connected*. FSM Analysis v1 decides, from that canonical evidence only,
+*whether a register and its next-state logic form a finite-state machine* and,
+where the evidence suffices, characterises it: state register, state set,
+encoding, reset state, transitions with structured guard paths and priority,
+holds, Moore / Mealy outputs, actions, graph reachability, coupling between
+FSMs, quality and the explicit unknowns.
+
+The boundary is **KF-DQ-010 = evidence, KF-DQ-011 = interpretation**:
+Semantic IR v2 says what RTL constructs exist, Behavioral Semantics what
+processes and registers do, Structural Analysis what hardware relationships
+exist; FSM Analysis only decides whether those relationships constitute an
+FSM and how to characterise it. It is not a second RTL parser.
+
+**Data flow.**
+
+```text
+Raw RTL -> Semantic IR v2 -> Behavioral Semantics v1 -> Structural Analysis v1 -> FSM Analysis v1 -> datasets
+```
+
+- `scripts/fsm/analyzer.py` reads the persisted Semantic IR v2, Behavioral
+  Semantics v1 and Structural Analysis v1 documents of a module. It never
+  parses RTL, never modifies any upstream artifact and fails closed when the
+  behavioral document was derived from another Semantic IR revision, or the
+  structural document from another Semantic IR / behavioral revision.
+- Output: one document per canonical module (also when it has no FSM) at
+  `normalized/fsm/v1/<ip>/<module>.json`, schema `kritva-forge-fsm-analysis`
+  version 1, canonical JSON.
+- `scripts/fsm/validator.py` validates documents and the corpus;
+  `scripts/fsm/query.py` answers queries (FSMs, states, transitions, incoming
+  / outgoing transitions, guard paths, encoding, outputs, actions, quality,
+  state register, reachability, couplings, rejections) without re-analysis.
+- **Legacy.** The parser-integrated FSM path (`scripts/fsm/fsm_*.py`,
+  `scripts/structural/fsm_structural.py`, the `fsm` field of normalized IR v1,
+  §8 / §9) is legacy / deprecated. FSM Analysis v1 neither imports nor reads
+  it; the parser, IR v1 and prompts are unchanged. Removing it is a separate
+  task.
+
+**Identification.** For every behavioral register `R` of a sequential process
+(`N` is `R` itself in a one-process FSM, or the combinational signal of
+`R <= N` in a two-process FSM):
+
+| Rule | Evidence |
+|---|---|
+| A | Behavioral Semantics `state_candidate` for `R` |
+| B | a next-value assignment guarded by an `if` / `case` / ternary predicate over `R` |
+| C | at least two distinct resolved state values over reset and functional updates (three-valued: unresolved is unknown, never false) |
+| L | Structural Analysis control dependency `R -> N` through such a predicate and data dependency `N -> R` across the sequential boundary (two-process), or control `R -> R` (one-process) |
+
+`confirmed` = (A or B) and C and L; `candidate` = (A or B) and L without C.
+A 1-bit register whose two values are plain literals, without A and without
+named state constants, stays a `candidate` (`trivial_state_domain`): its two
+values are its whole domain, so C carries no evidence (flags / handshakes,
+AC-016). Multiple drivers, an ambiguous behavioral update or opaque
+statements give `ambiguous`; a function call or hierarchical reference as next
+value gives `unsupported`. Registers that look interesting (A, B, two
+constants or a name hint) but fail are listed in `rejected` with a reason:
+`arithmetic_feedback` (counters), `no_state_predicate`, `name_only`,
+`no_closed_loop`. Names never contribute to status (`name_hint` is
+descriptive). There is no minimum width.
+
+**Schema.** Top level: `schema`, `versions` (schema / identity / analyzer /
+provenance 1; Semantic IR 2, Behavioral Semantics 1, Structural Analysis 1
+with identity versions), `generator`, `module` (ip, name, `mod1:`, Semantic IR
+module identity, location, source, the three input documents with path,
+sha256 and versions, plus the `str1:` structural identity), `fsms`,
+`couplings`, `rejected`, `notes`, `counts`, `fingerprint`, `id`.
+
+| Record | Content |
+|---|---|
+| FSM | status (confirmed / candidate / ambiguous / unsupported), quality (high / medium / low / ambiguous / unsupported), style (one_process / two_process), register (signal, name, width, `beh1:` register, `str1:` register, process), next-state signal, clock, reset (kind, polarity, status, signal, reset state, assignments), enables, hold (none / explicit / implicit / mixed), encoding, states, transitions, outputs, actions, reachability, evidence, unknowns (one record per kind), shape `fingerprint` |
+| State | encoded value, width, name and aliases, constant (parameter / localparam / enum_member / literal, `sem1:` reference, implicit enum value), declared / observed, reachability (graph_reachable / graph_unreachable / unknown), reset flag |
+| Transition | source and target state (or `*reset`, `*unknown`, `*none`), kind (explicit / explicit_hold / implicit_hold / default / reset), structured guard path, priority, assignment or behavioral hold, process, status (confirmed / derived / unknown), non-canonical `rendered` predicate |
+| Guard entry | Semantic IR statement, `str1:` predicate, kind (if / case / casez / casex / ternary / loop), branch (then / else / item / default / body), item, whether it tests the state register, the source states it selects, qualifier, role (control / reset / enable) |
+| Output | output port, Moore / Mealy / ambiguous, state and other sources (from the Structural Analysis fan-in cone) |
+| Action | assignment to another signal under a guard over the state register, per source state; kind output / register / control |
+| Coupling | `predicate` (a guard of FSM B tests the register of FSM A) or `data` (A's register feeds B's next value); FSMs are never merged |
+
+**Extraction rules.**
+
+- *State domain* is built only from resolved constants: values written to `R`
+  / `N`, reset values, `case` labels and equality tests over `R`, and the
+  members of the register's enum type (typedef, or the anonymous enum linked
+  through the members used). Enum members without an initializer take the
+  IEEE 1800 §6.19 value (first 0, then previous + 1) and are marked
+  `implicit`; nothing else is inferred. An unresolved constant makes the
+  domain incomplete (`incomplete_domain`).
+- *Guard paths* keep Semantic IR order (outermost first) and are the
+  canonical identity of a transition predicate (statement, branch, item and
+  structural predicate per level); `rendered` (e.g. `state == IDLE && start`)
+  is a deterministic display string only. The reset branch is
+  kept in the path but is not a source-state selector. An `else` / `default`
+  selects the complement of the tested values only when the domain is
+  complete, otherwise its source is `*unknown`; an empty complement (all
+  values covered) gives source `*none` and no graph edge.
+- *Priority* is the behavioral assignment order; a later unconditional
+  assignment for a source state overrides an earlier one (two-process default
+  `N = R` becomes an `implicit_hold` only where no later assignment applies).
+- *Outputs*: an output port is state-dependent when its Structural Analysis
+  fan-in cone contains the state register (or next-state signal); it is
+  Moore when the cone holds no module input and no other register, Mealy
+  when module inputs contribute, otherwise ambiguous. Names never decide.
+- *Encoding* is classified from the actual resolved state values only (never
+  names): gray (n >= 3 and every distinct-state transition flips one bit),
+  binary (dense 0..n-1), one_hot (one bit per state and width =
+  state count), otherwise custom; status `explicit` when all states are named
+  constants, `inferred` with literals, `unknown` when the domain is
+  incomplete.
+- *Reachability* is graph reachability from the reset state over the
+  extracted transitions (`known` only with a reset state, a complete domain
+  and no unknown transition). It is never predicate feasibility; the query API
+  reports `predicate_feasibility: not_analyzed`.
+- *Quality*: high = confirmed, explicit encoding, reset state known and no
+  unknown transition; medium = confirmed with gaps; low = candidate.
+
+**Identity and determinism.** `fsm1:` = sha256("kf-fsm", "v1", category,
+anchor, qualifier)[:16] with `sem1:` / `beh1:` anchors. The document `id`
+hashes the canonical document without `id` and `fingerprint`; FSM
+fingerprints hash a names-, values-, identity- and location-free shape
+(status, style, encoding style, state count, transition topology, guard
+structure, output kinds); the module fingerprint is the sorted set of FSM
+shapes. Lists are sorted by identity (states by value, guard paths in source
+order).
+
+**Validation, pipeline, stale, manifest.** The validator is fail closed
+(schema, versions, required fields, vocabularies, identity derivation,
+duplicates, state / Semantic IR / behavioral / structural references,
+provenance and paths, encoding recomputation, reachability closure,
+status / quality / evidence consistency, naming-only FSMs, counts,
+fingerprints, document identity); the corpus check adds inventory, canonical
+bytes, byte-identical re-analysis and leakage and writes
+`analysis/reports/fsm_report.json` (`make check-fsm`, part of
+`data-quality`). FSM documents are written after structural analysis; the FSM
+gate runs after the structural gate and again after the split (with leakage).
+An FSM document is CURRENT only when derived from the current Semantic IR,
+Behavioral Semantics and Structural Analysis (sha256), reproduced by
+re-analysis and valid; stray files are ORPHAN / UNMANAGED (no override,
+regenerate with `make fsm` or `make pipeline`). Data manifest version 5 adds
+`modules[].fsm {path, sha256, fsm_id, versions, module_id, status,
+derived_from {semantic_ir, behavior, structural + sha256}}`, `records[].fsm`
+for records with an FSM dependency and `versions.fsm` / `fsm_identity` /
+`fsm_analyzer`.
+
+**Leakage (KF-DQ-004).** FSM shapes occurring in modules of more than one
+split are reported as soft findings; a dataset record depending on FSM data
+of such a module fails the gate. The four KF-DQ-010 cross-split structural
+groups are carried over unchanged (soft, not promoted); promotion and any
+re-split remain a program-level decision.
+
+**Reproducibility.** Output depends only on the content of the three input
+documents: no timestamps, process ids, host / user names, random values,
+object identities or absolute paths. Clean regenerations (A/B) and a
+regeneration from a relocated checkout are byte-identical; the validator
+re-analyses every document and rejects any byte difference.
+
+**Known limitations.**
+
+- Unsupported constructs (function calls or hierarchical references as next
+  value) give `unsupported`; multiple drivers, ambiguous behavioral updates
+  and opaque statements give `ambiguous`; none is ever confirmed.
+- State values are only what resolves to a constant: package / external /
+  undeclared names, wildcard `casez` / `casex` labels and non-literal enum
+  initializers leave the domain incomplete (`incomplete_domain`, unknown
+  sources, encoding `unknown`); values are never guessed.
+- A reset is known only when Behavioral Semantics classifies it (a trailing
+  `if (rst)` override at the end of a block is not, so such FSMs have no
+  reset state and unknown reachability).
+- Reachability is graph reachability; predicate feasibility (SAT / SMT) is not
+  analysed. Hierarchy is not flattened: an FSM spread over instances, or an
+  output whose cone crosses an unresolved instance, is not interpreted
+  across the boundary.
+- The Semantic IR width of an anonymous-enum signal is not the enum width; it
+  is reported as unknown (`null`).
+
+**Query API** (`scripts/fsm/query.py`): `fsms`, `fsm`, `state_register`,
+`states`, `state`, `transitions`, `incoming`, `outgoing`, `guard`, `encoding`,
+`outputs`, `actions`, `quality`, `reachability` (always with
+`predicate_feasibility: not_analyzed`), `couplings`, `rejected`; results are
+deterministic copies.
+
+**Boundaries.** No RTL parsing, elaboration, SAT / SMT feasibility, timing,
+synthesis, RTL generation or modification of upstream artifacts.
+
 ---
 
 # 6. Semantic Analysis
@@ -860,6 +1045,11 @@ The implemented, versioned form of this layer is Structural Analysis v1
 ---
 
 # 8. FSM Architecture
+
+> **Legacy / deprecated.** §8 and §9 describe the parser-integrated FSM path
+> (`scripts/fsm/fsm_*.py`, `scripts/structural/fsm_structural.py`, the IR v1
+> `fsm` field). The canonical FSM interpretation is FSM Analysis v1 (§5.5,
+> KF-DQ-011); the legacy path is kept unchanged until a separate removal task.
 
 FSM analysis is a consumer of the RTL IR and structural information.
 

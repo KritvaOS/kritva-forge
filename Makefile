@@ -28,7 +28,7 @@ DATASET_DIR ?= $(DATA_ROOT)/datasets/pipeline
 CURATED_DIR ?=
 PROJECT ?= $(NORMALIZED_DIR)
 
-.PHONY: help venv setup test test-data check-layout check-leakage check-provenance check-stale clean-stale check-manifest check-semantic check-behavior behavior check-structural structural data-quality compile pipeline headers git_sync clean
+.PHONY: help venv setup test test-data check-layout check-leakage check-provenance check-stale clean-stale check-manifest check-semantic check-behavior behavior check-structural structural check-fsm fsm data-quality compile pipeline headers git_sync clean
 
 help:
 	@echo "Kritva Forge targets:"
@@ -46,7 +46,9 @@ help:
 	@echo "  make check-behavior - validate the Behavioral Semantics v1 corpus (evidence, consistency)"
 	@echo "  make structural     - regenerate Structural Analysis v1 from Semantic IR v2 + Behavioral Semantics v1"
 	@echo "  make check-structural - validate the Structural Analysis v1 corpus (references, provenance, leakage)"
-	@echo "  make data-quality - test-data + layout + leakage + provenance + semantic + behavior + structural + stale + manifest gates"
+	@echo "  make fsm            - regenerate FSM Analysis v1 from Semantic IR v2 + Behavioral Semantics v1 + Structural Analysis v1"
+	@echo "  make check-fsm      - validate the FSM Analysis v1 corpus (identities, references, encoding, leakage)"
+	@echo "  make data-quality - test-data + layout + leakage + provenance + semantic + behavior + structural + fsm + stale + manifest gates"
 	@echo "  make compile     - syntax-check Python sources"
 	@echo "  make headers     - validate KritvaOS source headers"
 	@echo "  make pipeline    - parse RTL and generate normalized IR/datasets"
@@ -112,7 +114,13 @@ structural: setup
 check-structural: setup
 	PYTHONPATH=. $(PYTHON) scripts/structural/validator.py --check --data-root "$(DATA_ROOT)"
 
-data-quality: test-data check-layout check-leakage check-provenance check-semantic check-behavior check-structural check-stale check-manifest
+fsm: setup
+	PYTHONPATH=. $(PYTHON) scripts/fsm/analyzer.py --write --data-root "$(DATA_ROOT)"
+
+check-fsm: setup
+	PYTHONPATH=. $(PYTHON) scripts/fsm/validator.py --check --data-root "$(DATA_ROOT)"
+
+data-quality: test-data check-layout check-leakage check-provenance check-semantic check-behavior check-structural check-fsm check-stale check-manifest
 
 headers:
 	python3 scripts/lint/check_source_headers.py --mode tracked --strict
