@@ -424,6 +424,44 @@ def structural_gate(data_root, final=False):
     return report
 
 
+def write_fsm(data_root):
+    """Derive FSM Analysis v1 from Semantic IR v2 + Behavioral Semantics v1 + Structural Analysis v1 (KF-DQ-011).
+
+    Runs right after structural analysis and before the pre-dataset stale
+    gate (which classifies the FSM documents).  Fails closed on missing or
+    unsupported inputs.
+    """
+    from scripts.fsm import analyzer as A
+
+    try:
+        res = A.write_all(data_root)
+    except A.AnalysisError as exc:
+        raise RuntimeError(f"FSM analysis refused (KF-DQ-011): {exc}") from exc
+    print(f"[INFO] FSM Analysis v1: {res['documents']} documents")
+    return res
+
+
+def fsm_gate(data_root, final=False):
+    """Validate every FSM Analysis v1 document (KF-DQ-011; no override).
+
+    Before dataset generation (``final=False``) the documents are validated
+    against their inputs; after the split is written (``final=True``) the
+    KF-DQ-004 FSM leakage check is included and the report is written.
+    """
+    from scripts.fsm import validator as V
+
+    report = V.check(data_root, with_leakage=final)
+    if final:
+        V.write_report(data_root, report)
+    print("[INFO] FSM Analysis v1 gate" + (" (with split leakage)" if final else ""))
+    print(V.format_report(report))
+    if report["status"] != "PASS":
+        raise RuntimeError(
+            "FSM Analysis v1 gate failed (KF-DQ-011): " + "; ".join(report["problems"][:5])
+        )
+    return report
+
+
 def write_provenance(data_root):
     """Write manifests/provenance_manifest.json and its validation report (KF-DQ-005)."""
     from scripts.core.provenance import (
@@ -542,6 +580,7 @@ def run_pipeline(
         #
         write_behavior(data_root)
         write_structural(data_root)          # KF-DQ-010, derived from Semantic IR + behavior
+        write_fsm(data_root)                 # KF-DQ-011, derived from Semantic IR + behavior + structure
         stale_gate(data_root, scope="inputs")
 
         #
@@ -563,6 +602,12 @@ def run_pipeline(
         #
         structural_gate(data_root)
 
+        #
+        # KF-DQ-011: FSM Analysis v1 gate (schema, identities, references,
+        # provenance, encoding / reachability consistency, re-analysis).
+        #
+        fsm_gate(data_root)
+
         generate_datasets(
             normalized_root,
             datasets_root,
@@ -577,6 +622,12 @@ def run_pipeline(
         # against the split just written; writes structural_report.json.
         #
         structural_gate(data_root, final=True)
+
+        #
+        # KF-DQ-011: final FSM gate with the KF-DQ-004 leakage check against
+        # the split just written; writes fsm_report.json.
+        #
+        fsm_gate(data_root, final=True)
 
         #
         # KF-DQ-005: canonical RTL provenance manifest + validation.
@@ -604,6 +655,7 @@ def run_pipeline(
         [normalized_root, os.path.join(os.path.dirname(normalized_root), "semantic_ir"),
          os.path.join(os.path.dirname(normalized_root), "behavior"),
          os.path.join(os.path.dirname(normalized_root), "structural"),
+         os.path.join(os.path.dirname(normalized_root), "fsm"),
          prompt_root, reports_root, datasets_root, splits_root,
          str(ForgeDataPaths.from_root(data_root).manifests)]
     )

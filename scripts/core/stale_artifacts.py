@@ -79,6 +79,8 @@ BEHAVIOR_DIR = "normalized/behavior/v1"                             # KF-DQ-009 
 BEHAVIOR_REPORT_PATH = "analysis/reports/behavior_report.json"      # KF-DQ-009 behavior gate
 STRUCTURAL_DIR = "normalized/structural/v1"                         # KF-DQ-010 Structural Analysis
 STRUCTURAL_REPORT_PATH = "analysis/reports/structural_report.json"  # KF-DQ-010 structural gate
+FSM_DIR = "normalized/fsm/v1"                                       # KF-DQ-011 FSM Analysis
+FSM_REPORT_PATH = "analysis/reports/fsm_report.json"                # KF-DQ-011 FSM gate
 # Gate outputs: listed whether or not they exist yet (their hashes are not
 # recorded), so the inventory never depends on itself; each is verified by
 # its own validator.
@@ -122,7 +124,7 @@ PIPELINE_OUTPUT_KINDS = frozenset({
     "dataset_split", "dataset_records", "dataset_manifest", "dataset_stats", "split_manifest",
     "provenance_manifest", "provenance_report", "split_leakage_report", "pipeline_stats",
     "artifact_inventory", "stale_artifact_report", "data_manifest", "data_manifest_report",
-    "semantic_ir_report", "behavior_report", "structural_report",
+    "semantic_ir_report", "behavior_report", "structural_report", "fsm_report",
 })
 _PROMPT_RE = re.compile(r"^generated/prompts/([^/]+)/([^/]+)\.generate\.txt$")
 
@@ -249,6 +251,7 @@ class Context:
             exp[f"{SEMANTIC_DIR}/{ip}/{mod}.json"] = ("semantic_ir", ip, mod)          # KF-DQ-008
             exp[f"{BEHAVIOR_DIR}/{ip}/{mod}.json"] = ("behavior", ip, mod)             # KF-DQ-009
             exp[f"{STRUCTURAL_DIR}/{ip}/{mod}.json"] = ("structural", ip, mod)         # KF-DQ-010
+            exp[f"{FSM_DIR}/{ip}/{mod}.json"] = ("fsm", ip, mod)                       # KF-DQ-011
         for ip in self.ips:
             exp[f"normalized/ir/{ip}/hierarchy.yaml"] = ("ip_metadata", ip, None)
             exp[f"normalized/ir/{ip}/summary.yaml"] = ("ip_metadata", ip, None)
@@ -262,6 +265,7 @@ class Context:
             SEMANTIC_REPORT_PATH: "semantic_ir_report",
             BEHAVIOR_REPORT_PATH: "behavior_report",
             STRUCTURAL_REPORT_PATH: "structural_report",
+            FSM_REPORT_PATH: "fsm_report",
             REPORT_PATH: "stale_artifact_report",
             "splits/split_manifest.json": "split_manifest",
             "manifests/provenance_manifest.json": "provenance_manifest",
@@ -451,6 +455,9 @@ def classify(data_root, use_recorded: bool = True) -> dict:
             elif kind == "structural":
                 state, reason = _structural_state(ctx, root, path, ip, mod, counters)
                 add(rel, kind, state, reason, ip, mod)
+            elif kind == "fsm":
+                state, reason = _fsm_state(ctx, root, path, ip, mod, counters)
+                add(rel, kind, state, reason, ip, mod)
             elif kind == "ip_metadata":
                 state = "CURRENT" if ip in ctx.raw_ips else "ORPHAN"
                 add(rel, kind, state, None if state == "CURRENT" else f"IP {ip} has no raw RTL", ip)
@@ -461,7 +468,14 @@ def classify(data_root, use_recorded: bool = True) -> dict:
                     None if ok else "RTL copy differs from its canonical source", ip)
             else:
                 parts = rel.split("/")
-                if len(parts) >= 2 and parts[1] == "structural":
+                if len(parts) >= 2 and parts[1] == "fsm":
+                    if rel.startswith(FSM_DIR + "/") and len(parts) == 5 and parts[4].endswith(".json"):
+                        add(rel, "fsm", "ORPHAN",
+                            f"module {parts[3]}/{parts[4][:-5]} has no canonical IR", parts[3])
+                    else:
+                        add(rel, "fsm_other", "UNMANAGED",
+                            f"not part of the FSM Analysis layout ({FSM_DIR}/<ip>/<module>.json)")
+                elif len(parts) >= 2 and parts[1] == "structural":
                     if rel.startswith(STRUCTURAL_DIR + "/") and len(parts) == 5 and parts[4].endswith(".json"):
                         add(rel, "structural", "ORPHAN",
                             f"module {parts[3]}/{parts[4][:-5]} has no canonical IR", parts[3])
@@ -604,6 +618,9 @@ def classify(data_root, use_recorded: bool = True) -> dict:
             add(rel, kind, state, reason)
         elif kind == "structural_report":
             state, reason = _structural_report_state(root, path)
+            add(rel, kind, state, reason)
+        elif kind == "fsm_report":
+            state, reason = _fsm_report_state(root, path)
             add(rel, kind, state, reason)
         elif kind == "pipeline_stats":
             data = _load_json(path)
@@ -823,6 +840,75 @@ def _structural_report_state(root: Path, path: Path) -> tuple[str, str | None]:
     return "CURRENT", None
 
 
+def _fsm_state(ctx, root: Path, path: Path, ip, mod, counters) -> tuple[str, str | None]:
+    """KF-DQ-011: an FSM Analysis v1 document is CURRENT only if it was derived from the current
+    Semantic IR v2, Behavioral Semantics v1 and Structural Analysis v1 documents (sha256), with the
+    current schema / analyzer, re-analysis reproduces it byte for byte and it validates."""
+    from scripts.fsm import analyzer as FA
+    from scripts.fsm import model as FM
+    from scripts.fsm.validator import validate_module
+
+    current = ctx.modules[(ip, mod)]
+    if not ctx.module_ok(ip, mod):
+        counters["invalid_source_identities"] += 1
+        return "ORPHAN", f"source {current['source']['path']} missing ({current['transformation']})"
+    text = path.read_text(encoding="utf-8", errors="replace")
+    try:
+        doc = json.loads(text)
+    except ValueError:
+        return "STALE", "unreadable FSM Analysis document"
+    if not isinstance(doc, dict) or doc.get("schema") != {"name": FM.SCHEMA_NAME, "version": FM.SCHEMA_VERSION} \
+            or (doc.get("versions") or {}).get("analyzer") != FM.ANALYZER_VERSION:
+        counters["obsolete_schema"] += 1
+        return "STALE", f"obsolete FSM schema / analyzer {doc.get('schema') if isinstance(doc, dict) else None!r}"
+    m = doc.get("module") or {}
+    if m.get("module_id") != current["module_id"] or m.get("ip") != ip or m.get("name") != mod:
+        counters["invalid_module_identities"] += 1
+        return "STALE", "module identity does not match the canonical module"
+    try:
+        inputs = FA.load_inputs(root, ip, mod)
+    except FA.AnalysisError as exc:
+        counters["invalid_fsm"] += 1
+        return "STALE", f"FSM input unavailable: {exc}"[:300]
+    for key, sha, what in (("semantic_ir", inputs[2], "Semantic IR"), ("behavior", inputs[5], "Behavioral Semantics"),
+                           ("structural", inputs[8], "Structural Analysis")):
+        if (m.get(key) or {}).get("sha256") != sha:
+            counters["invalid_fsm"] += 1
+            return "STALE", f"derived from an older {what} revision"
+    try:
+        fresh = FM.dumps(FA.analyze(*inputs))
+    except Exception as exc:                                  # noqa: BLE001 - reported as STALE
+        counters["invalid_fsm"] += 1
+        return "STALE", f"FSM inputs not analysable: {exc}"[:300]
+    if fresh != text:
+        counters["invalid_fsm"] += 1
+        return "STALE", "differs from a re-analysis of the current upstream evidence"
+    problems = validate_module(doc, *inputs)
+    if problems:
+        counters["invalid_fsm"] += 1
+        return "STALE", f"fails FSM Analysis validation: [{problems[0][0]}] {problems[0][1]}"[:300]
+    return "CURRENT", None
+
+
+def _fsm_report_state(root: Path, path: Path) -> tuple[str, str | None]:
+    import hashlib
+
+    from scripts.fsm import model as FM
+    from scripts.fsm.validator import SPLIT_MANIFEST, corpus_sha256
+
+    rep = _load_json(path)
+    if not isinstance(rep, dict) or rep.get("schema") != {"name": FM.SCHEMA_NAME, "version": FM.SCHEMA_VERSION}:
+        return "STALE", "missing or obsolete FSM schema"
+    if rep.get("status") != "PASS":
+        return "STALE", "FSM gate did not pass"
+    if rep.get("corpus_sha256") != corpus_sha256(root):
+        return "STALE", "FSM Analysis corpus changed since this report was written"
+    split = root / SPLIT_MANIFEST
+    if split.is_file() and (rep.get("leakage") or {}).get("split_manifest_sha256") != hashlib.sha256(split.read_bytes()).hexdigest():
+        return "STALE", "split manifest changed since the FSM leakage check"
+    return "CURRENT", None
+
+
 def remediation(entry: dict) -> str:
     state, rel = entry["state"], entry["path"]
     if state in ("CURRENT", "HISTORICAL"):
@@ -891,6 +977,7 @@ def build_report(result: dict, inventory_status: str | None, override: bool = Fa
         "invalid_semantic_ir": c["invalid_semantic_ir"],
         "invalid_behavior": c["invalid_behavior"],
         "invalid_structural": c["invalid_structural"],
+        "invalid_fsm": c["invalid_fsm"],
         "obsolete_schema": c["obsolete_schema"],
         "absolute_paths": c["absolute_paths"],
         "symlinks": c["symlinks"],
@@ -949,7 +1036,7 @@ def format_report(report: dict) -> str:
     rows = ["artifact_records_checked", "expected_artifacts", "current", "stale", "orphan", "historical",
             "unmanaged", "missing_expected", "duplicate_artifacts", "invalid_provenance",
             "invalid_source_identities", "invalid_module_identities", "missing_ir_references", "invalid_semantic_ir", "invalid_behavior",
-            "invalid_structural", "obsolete_schema", "absolute_paths", "symlinks", "dataset_records_checked",
+            "invalid_structural", "invalid_fsm", "obsolete_schema", "absolute_paths", "symlinks", "dataset_records_checked",
             "split_records_checked", "cleanup_candidates", "remediation_counts", "inventory_status"]
     lines = [f"Stale artifact check: {report['status']}" + (" (override)" if report.get("override") else "")]
     lines += [f"  {k.replace('_', ' '):26s}: {report.get(k)}" for k in rows if k in report]
