@@ -19,7 +19,7 @@
 * Stale gate: tampered, out-of-date, obsolete-schema, stray and missing
   behavioral documents are STALE / ORPHAN / UNMANAGED / MISSING and block
   dataset publication.
-* Data manifest v3: every module references its behavioral document.
+* Data manifest (v4): every module references its behavioral document.
 """
 
 import hashlib
@@ -142,11 +142,11 @@ def test_stale_behavior_blocks_publication(tree, monkeypatch):
         _run(tree)
 
 
-# ----------------------------------------------------------------------------- data manifest v3
+# ----------------------------------------------------------------------------- data manifest
 
-def test_manifest_v3_references_behavior(built):
+def test_manifest_references_behavior(built):
     m = json.loads((built.root / DM.MANIFEST_PATH).read_text())
-    assert m["schema"] == {"name": "kritva-forge-data-manifest", "version": 3}
+    assert m["schema"] == {"name": "kritva-forge-data-manifest", "version": 4}
     assert (m["versions"]["behavior"], m["versions"]["behavior_identity"]) == (1, 1)
     arts = {a["path"]: a for a in m["artifacts"]}
     for mod in m["modules"]:

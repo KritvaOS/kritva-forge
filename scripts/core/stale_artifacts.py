@@ -77,6 +77,8 @@ SEMANTIC_REPORT_PATH = "analysis/reports/semantic_ir_report.json"   # KF-DQ-008 
 SEMANTIC_DIR = "normalized/semantic_ir/v2"                          # KF-DQ-008 canonical Semantic IR
 BEHAVIOR_DIR = "normalized/behavior/v1"                             # KF-DQ-009 Behavioral Semantics
 BEHAVIOR_REPORT_PATH = "analysis/reports/behavior_report.json"      # KF-DQ-009 behavior gate
+STRUCTURAL_DIR = "normalized/structural/v1"                         # KF-DQ-010 Structural Analysis
+STRUCTURAL_REPORT_PATH = "analysis/reports/structural_report.json"  # KF-DQ-010 structural gate
 # Gate outputs: listed whether or not they exist yet (their hashes are not
 # recorded), so the inventory never depends on itself; each is verified by
 # its own validator.
@@ -120,7 +122,7 @@ PIPELINE_OUTPUT_KINDS = frozenset({
     "dataset_split", "dataset_records", "dataset_manifest", "dataset_stats", "split_manifest",
     "provenance_manifest", "provenance_report", "split_leakage_report", "pipeline_stats",
     "artifact_inventory", "stale_artifact_report", "data_manifest", "data_manifest_report",
-    "semantic_ir_report", "behavior_report",
+    "semantic_ir_report", "behavior_report", "structural_report",
 })
 _PROMPT_RE = re.compile(r"^generated/prompts/([^/]+)/([^/]+)\.generate\.txt$")
 
@@ -246,6 +248,7 @@ class Context:
             exp[f"generated/prompts/{ip}/{mod}.generate.txt"] = ("prompt", ip, mod)
             exp[f"{SEMANTIC_DIR}/{ip}/{mod}.json"] = ("semantic_ir", ip, mod)          # KF-DQ-008
             exp[f"{BEHAVIOR_DIR}/{ip}/{mod}.json"] = ("behavior", ip, mod)             # KF-DQ-009
+            exp[f"{STRUCTURAL_DIR}/{ip}/{mod}.json"] = ("structural", ip, mod)         # KF-DQ-010
         for ip in self.ips:
             exp[f"normalized/ir/{ip}/hierarchy.yaml"] = ("ip_metadata", ip, None)
             exp[f"normalized/ir/{ip}/summary.yaml"] = ("ip_metadata", ip, None)
@@ -258,6 +261,7 @@ class Context:
             "analysis/reports/provenance_report.json": "provenance_report",
             SEMANTIC_REPORT_PATH: "semantic_ir_report",
             BEHAVIOR_REPORT_PATH: "behavior_report",
+            STRUCTURAL_REPORT_PATH: "structural_report",
             REPORT_PATH: "stale_artifact_report",
             "splits/split_manifest.json": "split_manifest",
             "manifests/provenance_manifest.json": "provenance_manifest",
@@ -444,6 +448,9 @@ def classify(data_root, use_recorded: bool = True) -> dict:
             elif kind == "behavior":
                 state, reason = _behavior_state(ctx, root, path, ip, mod, counters)
                 add(rel, kind, state, reason, ip, mod)
+            elif kind == "structural":
+                state, reason = _structural_state(ctx, root, path, ip, mod, counters)
+                add(rel, kind, state, reason, ip, mod)
             elif kind == "ip_metadata":
                 state = "CURRENT" if ip in ctx.raw_ips else "ORPHAN"
                 add(rel, kind, state, None if state == "CURRENT" else f"IP {ip} has no raw RTL", ip)
@@ -454,7 +461,14 @@ def classify(data_root, use_recorded: bool = True) -> dict:
                     None if ok else "RTL copy differs from its canonical source", ip)
             else:
                 parts = rel.split("/")
-                if len(parts) >= 2 and parts[1] == "behavior":
+                if len(parts) >= 2 and parts[1] == "structural":
+                    if rel.startswith(STRUCTURAL_DIR + "/") and len(parts) == 5 and parts[4].endswith(".json"):
+                        add(rel, "structural", "ORPHAN",
+                            f"module {parts[3]}/{parts[4][:-5]} has no canonical IR", parts[3])
+                    else:
+                        add(rel, "structural_other", "UNMANAGED",
+                            f"not part of the Structural Analysis layout ({STRUCTURAL_DIR}/<ip>/<module>.json)")
+                elif len(parts) >= 2 and parts[1] == "behavior":
                     if rel.startswith(BEHAVIOR_DIR + "/") and len(parts) == 5 and parts[4].endswith(".json"):
                         add(rel, "behavior", "ORPHAN",
                             f"module {parts[3]}/{parts[4][:-5]} has no canonical IR", parts[3])
@@ -587,6 +601,9 @@ def classify(data_root, use_recorded: bool = True) -> dict:
             add(rel, kind, state, reason)
         elif kind == "behavior_report":
             state, reason = _behavior_report_state(root, path)
+            add(rel, kind, state, reason)
+        elif kind == "structural_report":
+            state, reason = _structural_report_state(root, path)
             add(rel, kind, state, reason)
         elif kind == "pipeline_stats":
             data = _load_json(path)
@@ -733,6 +750,79 @@ def _behavior_report_state(root: Path, path: Path) -> tuple[str, str | None]:
     return "CURRENT", None
 
 
+def _structural_state(ctx, root: Path, path: Path, ip, mod, counters) -> tuple[str, str | None]:
+    """KF-DQ-010: a Structural Analysis v1 document is CURRENT only if it was derived from the current
+    Semantic IR v2 and Behavioral Semantics v1 documents (sha256), with the current schema / analyzer,
+    re-analysis reproduces it byte for byte and it validates."""
+    from scripts.structural import analyzer as TA
+    from scripts.structural import model as TM
+    from scripts.structural.validator import validate_module
+
+    current = ctx.modules[(ip, mod)]
+    if not ctx.module_ok(ip, mod):
+        counters["invalid_source_identities"] += 1
+        return "ORPHAN", f"source {current['source']['path']} missing ({current['transformation']})"
+    text = path.read_text(encoding="utf-8", errors="replace")
+    try:
+        doc = json.loads(text)
+    except ValueError:
+        return "STALE", "unreadable Structural Analysis document"
+    if not isinstance(doc, dict) or doc.get("schema") != {"name": TM.SCHEMA_NAME, "version": TM.SCHEMA_VERSION} \
+            or (doc.get("versions") or {}).get("analyzer") != TM.ANALYZER_VERSION:
+        counters["obsolete_schema"] += 1
+        return "STALE", f"obsolete structural schema / analyzer {doc.get('schema') if isinstance(doc, dict) else None!r}"
+    m = doc.get("module") or {}
+    if m.get("module_id") != current["module_id"] or m.get("ip") != ip or m.get("name") != mod:
+        counters["invalid_module_identities"] += 1
+        return "STALE", "module identity does not match the canonical module"
+    try:
+        sem, srel, ssha, beh, brel, bsha = TA.load_inputs(root, ip, mod)
+    except TA.AnalysisError as exc:
+        counters["invalid_structural"] += 1
+        return "STALE", f"structural input unavailable: {exc}"[:300]
+    if (m.get("semantic_ir") or {}).get("sha256") != ssha:
+        counters["invalid_structural"] += 1
+        return "STALE", "derived from an older Semantic IR revision"
+    if (m.get("behavior") or {}).get("sha256") != bsha:
+        counters["invalid_structural"] += 1
+        return "STALE", "derived from an older Behavioral Semantics revision"
+    inv = getattr(ctx, "_structural_inventory", None)
+    if inv is None:
+        inv = ctx._structural_inventory = TA.inventory(root)
+    try:
+        fresh = TM.dumps(TA.analyze(sem, srel, ssha, beh, brel, bsha, inv))
+    except Exception as exc:                                  # noqa: BLE001 - reported as STALE
+        counters["invalid_structural"] += 1
+        return "STALE", f"structural inputs not analysable: {exc}"[:300]
+    if fresh != text:
+        counters["invalid_structural"] += 1
+        return "STALE", "differs from a re-analysis of the current Semantic IR / Behavioral Semantics"
+    problems = validate_module(doc, sem, beh, ssha, bsha)
+    if problems:
+        counters["invalid_structural"] += 1
+        return "STALE", f"fails Structural Analysis validation: [{problems[0][0]}] {problems[0][1]}"[:300]
+    return "CURRENT", None
+
+
+def _structural_report_state(root: Path, path: Path) -> tuple[str, str | None]:
+    import hashlib
+
+    from scripts.structural import model as TM
+    from scripts.structural.validator import SPLIT_MANIFEST, corpus_sha256
+
+    rep = _load_json(path)
+    if not isinstance(rep, dict) or rep.get("schema") != {"name": TM.SCHEMA_NAME, "version": TM.SCHEMA_VERSION}:
+        return "STALE", "missing or obsolete structural schema"
+    if rep.get("status") != "PASS":
+        return "STALE", "structural gate did not pass"
+    if rep.get("corpus_sha256") != corpus_sha256(root):
+        return "STALE", "Structural Analysis corpus changed since this report was written"
+    split = root / SPLIT_MANIFEST
+    if split.is_file() and (rep.get("leakage") or {}).get("split_manifest_sha256") != hashlib.sha256(split.read_bytes()).hexdigest():
+        return "STALE", "split manifest changed since the structural leakage check"
+    return "CURRENT", None
+
+
 def remediation(entry: dict) -> str:
     state, rel = entry["state"], entry["path"]
     if state in ("CURRENT", "HISTORICAL"):
@@ -800,6 +890,7 @@ def build_report(result: dict, inventory_status: str | None, override: bool = Fa
         "missing_ir_references": c["missing_ir_references"],
         "invalid_semantic_ir": c["invalid_semantic_ir"],
         "invalid_behavior": c["invalid_behavior"],
+        "invalid_structural": c["invalid_structural"],
         "obsolete_schema": c["obsolete_schema"],
         "absolute_paths": c["absolute_paths"],
         "symlinks": c["symlinks"],
@@ -858,7 +949,7 @@ def format_report(report: dict) -> str:
     rows = ["artifact_records_checked", "expected_artifacts", "current", "stale", "orphan", "historical",
             "unmanaged", "missing_expected", "duplicate_artifacts", "invalid_provenance",
             "invalid_source_identities", "invalid_module_identities", "missing_ir_references", "invalid_semantic_ir", "invalid_behavior",
-            "obsolete_schema", "absolute_paths", "symlinks", "dataset_records_checked",
+            "invalid_structural", "obsolete_schema", "absolute_paths", "symlinks", "dataset_records_checked",
             "split_records_checked", "cleanup_candidates", "remediation_counts", "inventory_status"]
     lines = [f"Stale artifact check: {report['status']}" + (" (override)" if report.get("override") else "")]
     lines += [f"  {k.replace('_', ' '):26s}: {report.get(k)}" for k in rows if k in report]

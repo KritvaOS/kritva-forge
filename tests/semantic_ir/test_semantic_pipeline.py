@@ -141,7 +141,7 @@ def test_missing_document_is_reported(tree):
 
 def test_manifest_v2_references_semantic_ir(built):
     m = json.loads((built.root / DM.MANIFEST_PATH).read_text())
-    assert m["schema"] == {"name": "kritva-forge-data-manifest", "version": 3}
+    assert m["schema"] == {"name": "kritva-forge-data-manifest", "version": 4}
     assert m["versions"]["semantic_ir"] == 2 and m["versions"]["semantic_identity"] == 1
     assert m["versions"]["semantic_parser_version"].startswith("pyslang")
     arts = {a["path"]: a for a in m["artifacts"]}
