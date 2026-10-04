@@ -661,6 +661,150 @@ derived_from {semantic_ir, semantic_ir_sha256}}`, and the manifest's
   summaries, register / next-value / state candidates and evidence.
 - **Unchanged:** Semantic IR v2, v1 IR, prompts, datasets and splits.
 
+## 5.4 Structural Analysis v1 (KF-DQ-010)
+
+**Purpose.** Behavioral Semantics (§5.3) says *what each process does*.
+Structural Analysis v1 records *how the hardware is connected*: drivers and
+loads of every signal, data / control dependencies, register boundaries,
+fan-in / fan-out, cones, combinational cycles and hierarchy connectivity. It
+answers questions such as "what drives X", "what controls register Q",
+"what is the fan-in cone of Y" or "where are the combinational cycles", and
+it exposes the structural evidence FSM integration (KF-DQ-011) needs without
+implementing any FSM logic.
+
+**Data flow.**
+
+```text
+Raw RTL -> Semantic IR v2 -> Behavioral Semantics v1 -> Structural Analysis v1 -> (KF-DQ-011 FSM) -> datasets
+```
+
+- `scripts/structural/analyzer.py` reads the persisted Semantic IR v2 and
+  Behavioral Semantics v1 documents of a module and the canonical module
+  inventory (to resolve instance children). It never parses RTL and never
+  modifies `normalized/ir`, `normalized/semantic_ir/v2`,
+  `normalized/behavior/v1` or raw RTL.
+- Behavioral classifications (process roles and confidence, clocks, resets,
+  registers, enables, holds, next values, state candidates) are consumed as
+  they are; the validator rejects a document whose process role differs from
+  the behavioral role (no silent override).
+- The analysis refuses (fails closed) when the behavioral document was
+  derived from another Semantic IR revision than the current one.
+- Output: one document per canonical module at
+  `normalized/structural/v1/<ip>/<module>.json`, schema
+  `kritva-forge-structural-analysis` version 1, canonical JSON (sorted keys,
+  compact separators, trailing newline).
+- `scripts/structural/query.py` answers queries over a persisted document
+  (cones, drivers, loads, controls, registers controlled by a signal, SCCs)
+  without re-analysis.
+
+**Schema.** Top level: `schema`, `versions` (schema 1, identity 1, analyzer
+1, provenance 1, Semantic IR 2 / identity 1, Behavioral Semantics 1 /
+identity 1), `generator`, `module` (ip, name, `mod1:` module identity, Semantic
+IR module identity, location, source path and sha256, the exact Semantic IR
+and Behavioral Semantics documents used: path, sha256, schema and identity
+version), the sections below, `counts`, `notes`, `fingerprint` and `id`.
+
+| Section (entity) | Content |
+|---|---|
+| `signals` (Port / Signal) | kind, direction, width, driver and load lists, `driver_status` (driven / undriven / external / unknown), `driver_units`, `multiple_drivers`, `possible_drivers`, `fan_in` (direct, expression, control, processes, drivers, signals), `fan_out` (processes, assignments, signals, outputs, instances, loads), structural `classes` with status and evidence, register |
+| `processes` (Process) | behavioral role / confidence (copied), boundary, `reads`, `writes`, `read_write` ordering (read_first / write_first / nonblocking / mixed / unknown), assignments, drivers, predicates |
+| `assignments` (Assignment) | kind, context, boundary, targets, partial write, data and control sources, guards (outer to inner), order in the process |
+| `predicates` (Predicate / Case) | if / case / casez / casex statement, qualifier, predicate signals, case items and label signals, default, controlled targets, enclosing guard (`parent`), depth, role (control / reset / enable) |
+| `drivers` (Driver) | one per (signal, driver unit); kinds continuous_assignment, net_declaration, procedural, initializer, instance_output, instance_inout, instance_unknown, module_input; assignments in order, connection, whole / partial write, status |
+| `loads` (Load / Expression use) | one per Semantic IR read / connect reference plus one per module output: kind (assignment_value, ternary_condition, target_index, condition, case_expression, case_item, event, loop_condition, instance_input / inout / unknown / index / parameter, subroutine, statement, declaration, module_output), consumer, process, targets |
+| `dependencies` (Dependency) | `source -> target` with kind (data / control / reset / enable / hold / clock), context (continuous_assignment, procedural_assignment, sequential_update, initialization, reset, hold, loop_control, condition, case_expression, case_item, ternary_condition, target_index, enable, clock_event), boundary (combinational / sequential / latch / initialization / unknown), anchoring construct `via`, process, assignments, Semantic IR references, behavioral anchors, `direct`, `partial`, status, hold kind |
+| `registers` (Register) | behavioral register: clock (signal, edge, status), resets (signal, kind, polarity, status, reset assignments), enables, explicit / implicit holds, next values with source signals, priority leaves (reset / update / hold with guards), state candidate |
+| `multiple_drivers` | signals with more than one driver unit: units, kinds, reasons (partial_writes, generate), status (confirmed / candidate) |
+| `cycles` | combinational strongly connected components (Tarjan): signals, edges, status |
+| `cones` | fan-in cones of registers and outputs, fan-out cones of registers and inputs |
+| `instances` / `connections` / `hierarchy` (Instance / Connection / HierarchyEdge) | child module, resolution (resolved / unresolved with reason), parameters, connections with direction and flow (parent_to_child / child_to_parent / bidirectional / unknown), one `instantiates` edge per instance |
+
+**Relationship rules.**
+
+- *Data*: each signal read in an assignment value drives each assignment
+  target. A ternary condition, a target index and every guard predicate is a
+  *control* relationship, never an ordinary data input.
+- *Reset / enable*: a guard edge becomes `reset` when its statement and
+  signal are the behavioral reset of the process (status confirmed for
+  asynchronous, candidate for synchronous resets), and `enable` when the
+  statement is a behavioral enable of that register.
+- *Clock*: the behavioral clock of each register (`clock_event`).
+- *Hold*: explicit holds are the self-assignment (`q <= q`), implicit holds a
+  behavioral hold (`q -> q`, no assignment); the two stay distinct.
+- *Boundary*: edges anchored in a sequential process are `sequential`; cones
+  stop at registers and record them, so register boundaries are explicit.
+- *Hierarchy*: instances are not flattened. Inputs become loads, outputs
+  become drivers of the parent signal; unknown directions (unresolved
+  children) are `candidate`, and a signal driven only through them is
+  `unknown`, never `undriven`. A child without canonical IR stays
+  `unresolved` (`not_resolved_by_elaboration` or `no_canonical_child_ir`).
+- *Cycles*: computed over combinational / latch edges; for-loop control
+  (`loop_control`) and values written before they are read in the same
+  process are excluded.
+
+**Identity, evidence and provenance.**
+
+- Object identity `str1:` = sha256("kf-str", "v1", category, anchor,
+  qualifier)[:16]; the anchor is a `sem1:` or `beh1:` identity, so identities
+  depend only on RTL content. The document `id` is the content hash of the
+  document; `fingerprint` hashes an identity- and location-free projection
+  (names, kinds, widths, relationships).
+- Structural classes use the vocabulary data, control, reset, enable, hold,
+  clock, hierarchy, port_connection, driver, load, sequential_boundary,
+  unknown with status confirmed / candidate / ambiguous / unsupported. Names
+  (`*_clk`, `*_rst`, `*_en`, `state`) add `name_hint` evidence only; the
+  validator rejects a class supported by its name alone.
+- Every record carries a repository-relative location and at least one
+  Semantic IR or behavioral anchor. The corpus report counts objects with
+  valid provenance, missing provenance and invalid references (target 100 %
+  / 0).
+
+**Ordering.** Every section is sorted by `id`; id lists are sorted; guard
+lists and priority leaves keep source order. Ordering never depends on
+traversal, dictionary or hash order.
+
+**Validation.** `scripts/structural/validator.py` is fail closed: schema and
+version block, required fields, vocabularies, identity derivation, duplicate
+identities and relationships, Semantic IR / behavioral / driver / load
+references, provenance, absolute paths, read / write consistency with the
+loads, drivers and behavioral process, role conflicts, relationship kind /
+context / boundary consistency, counts, fingerprint and document identity,
+naming-only classes, ordering. The corpus check adds inventory, canonical
+bytes, inputs, byte-identical re-analysis and the leakage check, and writes
+`analysis/reports/structural_report.json` (`make check-structural`, part of
+`data-quality`).
+
+**Pipeline and stale integration.** Structural documents are written right
+after behavioral analysis, before the pre-dataset stale gate; the structural
+gate runs after the behavior gate, and again after the split is written
+(with the leakage check, writing the report). A structural document is
+CURRENT only when its schema and analyzer version are current, it was derived
+from the current Semantic IR and Behavioral Semantics (sha256), re-analysis
+reproduces it and it validates; stray files are ORPHAN / UNMANAGED. Any of
+these blocks publication (no override); the remedy is regeneration
+(`make structural` or `make pipeline`).
+
+**Data manifest (version 4).** Each module gains `structural {path, sha256,
+structural_id, schema_version, identity_version, analyzer_version,
+provenance_version, module_id, status, derived_from {semantic_ir,
+semantic_ir_sha256, behavior, behavior_sha256}}`; `versions` gain
+`structural`, `structural_identity`, `structural_analyzer`. A dataset record
+whose provenance declares a structural dependency is listed with
+`structural {path, sha256}`, which must be the module's current artifact.
+
+**Leakage (KF-DQ-004).** Modules that share a structural `fingerprint` across
+splits are reported (soft, `cross_split_fingerprints`). A dataset record that
+depends on structural data of such a module fails the structural gate. No
+current dataset record consumes structural data; KF-DQ-012/013 must resolve
+the reported cross-split structures before they do.
+
+**Boundaries.** KF-DQ-010 provides the structural evidence for KF-DQ-011
+(state candidates and registers, next-value dependencies, `case(state)`
+predicates, state-dependent outputs through fan-out, register boundaries,
+enables, holds, resets) but implements no FSM extraction, encoding or
+transition logic, no timing / PPA, no elaboration of generates and no
+flattening of the hierarchy.
+
 ---
 
 # 6. Semantic Analysis
@@ -709,6 +853,9 @@ Data-flow relationships
 ```
 
 The structural layer is particularly important for FSM detection.
+
+The implemented, versioned form of this layer is Structural Analysis v1
+(KF-DQ-010, §5.4): `normalized/structural/v1`.
 
 ---
 
@@ -1161,9 +1308,10 @@ All actions are validated before any is executed, and one unsafe entry aborts th
 
 `manifests/data_manifest.json` is the single authoritative inventory of the
 data repository (`scripts/core/data_manifest.py`, schema
-`kritva-forge-data-manifest` version 3: version 2 (KF-DQ-008) added the
+`kritva-forge-data-manifest` version 4: version 2 (KF-DQ-008) added the
 Semantic IR v2 references, see §5.2; version 3 (KF-DQ-009) added the
-Behavioral Semantics v1 references, see §5.3). It is written as JSON because every
+Behavioral Semantics v1 references, see §5.3; version 4 (KF-DQ-010) added the
+Structural Analysis v1 references and record structural traceability, see §5.4). It is written as JSON because every
 other machine manifest in the repository is JSON, the standard library
 serialises it byte-deterministically (`sort_keys`), and it parses much faster
 than YAML at about 0.8 MB.

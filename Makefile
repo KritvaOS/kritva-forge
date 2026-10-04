@@ -28,7 +28,7 @@ DATASET_DIR ?= $(DATA_ROOT)/datasets/pipeline
 CURATED_DIR ?=
 PROJECT ?= $(NORMALIZED_DIR)
 
-.PHONY: help venv setup test test-data check-layout check-leakage check-provenance check-stale clean-stale check-manifest check-semantic check-behavior behavior data-quality compile pipeline headers git_sync clean
+.PHONY: help venv setup test test-data check-layout check-leakage check-provenance check-stale clean-stale check-manifest check-semantic check-behavior behavior check-structural structural data-quality compile pipeline headers git_sync clean
 
 help:
 	@echo "Kritva Forge targets:"
@@ -44,7 +44,9 @@ help:
 	@echo "  make check-semantic - validate the Semantic IR v2 corpus (schema, identities, references)"
 	@echo "  make behavior       - regenerate Behavioral Semantics v1 from Semantic IR v2"
 	@echo "  make check-behavior - validate the Behavioral Semantics v1 corpus (evidence, consistency)"
-	@echo "  make data-quality - test-data + layout + leakage + provenance + semantic + behavior + stale + manifest gates"
+	@echo "  make structural     - regenerate Structural Analysis v1 from Semantic IR v2 + Behavioral Semantics v1"
+	@echo "  make check-structural - validate the Structural Analysis v1 corpus (references, provenance, leakage)"
+	@echo "  make data-quality - test-data + layout + leakage + provenance + semantic + behavior + structural + stale + manifest gates"
 	@echo "  make compile     - syntax-check Python sources"
 	@echo "  make headers     - validate KritvaOS source headers"
 	@echo "  make pipeline    - parse RTL and generate normalized IR/datasets"
@@ -104,7 +106,13 @@ behavior: setup
 check-behavior: setup
 	PYTHONPATH=. $(PYTHON) scripts/behavior/validator.py --check --data-root "$(DATA_ROOT)"
 
-data-quality: test-data check-layout check-leakage check-provenance check-semantic check-behavior check-stale check-manifest
+structural: setup
+	PYTHONPATH=. $(PYTHON) scripts/structural/analyzer.py --write --data-root "$(DATA_ROOT)"
+
+check-structural: setup
+	PYTHONPATH=. $(PYTHON) scripts/structural/validator.py --check --data-root "$(DATA_ROOT)"
+
+data-quality: test-data check-layout check-leakage check-provenance check-semantic check-behavior check-structural check-stale check-manifest
 
 headers:
 	python3 scripts/lint/check_source_headers.py --mode tracked --strict

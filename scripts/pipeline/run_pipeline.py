@@ -386,6 +386,44 @@ def behavior_gate(data_root):
     return report
 
 
+def write_structural(data_root):
+    """Derive Structural Analysis v1 from Semantic IR v2 + Behavioral Semantics v1 (KF-DQ-010).
+
+    Runs right after behavioral analysis and before the pre-dataset stale
+    gate (which classifies the structural documents).  Fails closed on
+    missing or unsupported inputs.
+    """
+    from scripts.structural import analyzer as A
+
+    try:
+        res = A.write_all(data_root)
+    except A.AnalysisError as exc:
+        raise RuntimeError(f"structural analysis refused (KF-DQ-010): {exc}") from exc
+    print(f"[INFO] Structural Analysis v1: {res['documents']} documents")
+    return res
+
+
+def structural_gate(data_root, final=False):
+    """Validate every Structural Analysis v1 document (KF-DQ-010; no override).
+
+    Before dataset generation (``final=False``) the documents are validated
+    against their inputs; after the split is written (``final=True``) the
+    KF-DQ-004 structural leakage check is included and the report is written.
+    """
+    from scripts.structural import validator as V
+
+    report = V.check(data_root, with_leakage=final)
+    if final:
+        V.write_report(data_root, report)
+    print("[INFO] Structural Analysis v1 gate" + (" (with split leakage)" if final else ""))
+    print(V.format_report(report))
+    if report["status"] != "PASS":
+        raise RuntimeError(
+            "Structural Analysis v1 gate failed (KF-DQ-010): " + "; ".join(report["problems"][:5])
+        )
+    return report
+
+
 def write_provenance(data_root):
     """Write manifests/provenance_manifest.json and its validation report (KF-DQ-005)."""
     from scripts.core.provenance import (
@@ -503,6 +541,7 @@ def run_pipeline(
         # normalized/behavior/v1, KF-DQ-009, derived just before the gate).
         #
         write_behavior(data_root)
+        write_structural(data_root)          # KF-DQ-010, derived from Semantic IR + behavior
         stale_gate(data_root, scope="inputs")
 
         #
@@ -518,6 +557,12 @@ def run_pipeline(
         #
         behavior_gate(data_root)
 
+        #
+        # KF-DQ-010: Structural Analysis v1 gate (schema, identities,
+        # references, provenance, read/write consistency, re-analysis).
+        #
+        structural_gate(data_root)
+
         generate_datasets(
             normalized_root,
             datasets_root,
@@ -526,6 +571,12 @@ def run_pipeline(
             splits_root=splits_root,
             reports_root=reports_root,
         )
+
+        #
+        # KF-DQ-010: final structural gate with the KF-DQ-004 leakage check
+        # against the split just written; writes structural_report.json.
+        #
+        structural_gate(data_root, final=True)
 
         #
         # KF-DQ-005: canonical RTL provenance manifest + validation.
@@ -552,6 +603,7 @@ def run_pipeline(
     check_portable_provenance(
         [normalized_root, os.path.join(os.path.dirname(normalized_root), "semantic_ir"),
          os.path.join(os.path.dirname(normalized_root), "behavior"),
+         os.path.join(os.path.dirname(normalized_root), "structural"),
          prompt_root, reports_root, datasets_root, splits_root,
          str(ForgeDataPaths.from_root(data_root).manifests)]
     )
