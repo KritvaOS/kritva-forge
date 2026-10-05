@@ -3,7 +3,7 @@
 # SPDX-License-Identifier: Apache-2.0
 #
 # File        : query.py
-# Description : FSM Analysis v1 query API (KF-DQ-011)
+# Description : FSM Analysis v2 query API (KF-DQ-011)
 #
 # Component   : Kritva Forge
 # Module      : fsm
@@ -12,7 +12,7 @@
 # Author      : Kritva Forge Team
 # Created     : 02-10-2026
 # =============================================================================
-"""Deterministic read-only queries over one FSM Analysis v1 document (AC-223 .. AC-234).
+"""Deterministic read-only queries over one FSM Analysis v2 document (AC-223 .. AC-234).
 
 Every result is a fresh, canonically ordered structure derived only from the
 document.  Reachability is graph reachability over the extracted transition

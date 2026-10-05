@@ -675,7 +675,7 @@ implementing any FSM logic.
 **Data flow.**
 
 ```text
-Raw RTL -> Semantic IR v2 -> Behavioral Semantics v1 -> Structural Analysis v1 -> FSM Analysis v1 (§5.5) -> datasets
+Raw RTL -> Semantic IR v2 -> Behavioral Semantics v1 -> Structural Analysis v1 -> FSM Analysis v2 (§5.5) -> datasets
 ```
 
 - `scripts/structural/analyzer.py` reads the persisted Semantic IR v2 and
@@ -805,10 +805,10 @@ enables, holds, resets) but implements no FSM extraction, encoding or
 transition logic, no timing / PPA, no elaboration of generates and no
 flattening of the hierarchy.
 
-## 5.5 FSM Analysis v1 (KF-DQ-011)
+## 5.5 FSM Analysis v2 (KF-DQ-011, KF-DQ-011.1)
 
 **Purpose.** Structural Analysis (§5.4) records *how the hardware is
-connected*. FSM Analysis v1 decides, from that canonical evidence only,
+connected*. FSM Analysis decides, from that canonical evidence only,
 *whether a register and its next-state logic form a finite-state machine* and,
 where the evidence suffices, characterises it: state register, state set,
 encoding, reset state, transitions with structured guard paths and priority,
@@ -824,7 +824,7 @@ FSM and how to characterise it. It is not a second RTL parser.
 **Data flow.**
 
 ```text
-Raw RTL -> Semantic IR v2 -> Behavioral Semantics v1 -> Structural Analysis v1 -> FSM Analysis v1 -> datasets
+Raw RTL -> Semantic IR v2 -> Behavioral Semantics v1 -> Structural Analysis v1 -> FSM Analysis v2 -> datasets
 ```
 
 - `scripts/fsm/analyzer.py` reads the persisted Semantic IR v2, Behavioral
@@ -833,15 +833,18 @@ Raw RTL -> Semantic IR v2 -> Behavioral Semantics v1 -> Structural Analysis v1 -
   behavioral document was derived from another Semantic IR revision, or the
   structural document from another Semantic IR / behavioral revision.
 - Output: one document per canonical module (also when it has no FSM) at
-  `normalized/fsm/v1/<ip>/<module>.json`, schema `kritva-forge-fsm-analysis`
-  version 1, canonical JSON.
+  `normalized/fsm/v2/<ip>/<module>.json`, schema `kritva-forge-fsm-analysis`
+  version 2, canonical JSON. Version 1 (`normalized/fsm/v1`, KF-DQ-011) is
+  obsolete: KF-DQ-011.1 replaced it and removed it from the data working tree
+  (it remains in git history); any v1 file left in the tree is STALE and fails
+  the FSM and stale gates.
 - `scripts/fsm/validator.py` validates documents and the corpus;
   `scripts/fsm/query.py` answers queries (FSMs, states, transitions, incoming
   / outgoing transitions, guard paths, encoding, outputs, actions, quality,
   state register, reachability, couplings, rejections) without re-analysis.
 - **Legacy.** The parser-integrated FSM path (`scripts/fsm/fsm_*.py`,
   `scripts/structural/fsm_structural.py`, the `fsm` field of normalized IR v1,
-  §8 / §9) is legacy / deprecated. FSM Analysis v1 neither imports nor reads
+  §8 / §9) is legacy / deprecated. FSM Analysis neither imports nor reads
   it; the parser, IR v1 and prompts are unchanged. Removing it is a separate
   task.
 
@@ -868,7 +871,7 @@ constants or a name hint) but fail are listed in `rejected` with a reason:
 `no_closed_loop`. Names never contribute to status (`name_hint` is
 descriptive). There is no minimum width.
 
-**Schema.** Top level: `schema`, `versions` (schema / identity / analyzer /
+**Schema.** Top level: `schema`, `versions` (schema 2, identity 1, analyzer 2,
 provenance 1; Semantic IR 2, Behavioral Semantics 1, Structural Analysis 1
 with identity versions), `generator`, `module` (ip, name, `mod1:`, Semantic IR
 module identity, location, source, the three input documents with path,
@@ -881,7 +884,7 @@ sha256 and versions, plus the `str1:` structural identity), `fsms`,
 | State | encoded value, width, name and aliases, constant (parameter / localparam / enum_member / literal, `sem1:` reference, implicit enum value), declared / observed, reachability (graph_reachable / graph_unreachable / unknown), reset flag |
 | Transition | source and target state (or `*reset`, `*unknown`, `*none`), kind (explicit / explicit_hold / implicit_hold / default / reset), structured guard path, priority, assignment or behavioral hold, process, status (confirmed / derived / unknown), non-canonical `rendered` predicate |
 | Guard entry | Semantic IR statement, `str1:` predicate, kind (if / case / casez / casex / ternary / loop), branch (then / else / item / default / body), item, whether it tests the state register, the source states it selects, qualifier, role (control / reset / enable) |
-| Output | output port, Moore / Mealy / ambiguous, state and other sources (from the Structural Analysis fan-in cone) |
+| Output | output port, Moore / Mealy / ambiguous, `registered`, `state_sources`, `sampled_sources` (registered outputs: inputs / registers read by the update logic) and `other_sources` (non-state sources of the combinational output cone; `[]` for a registered output) |
 | Action | assignment to another signal under a guard over the state register, per source state; kind output / register / control |
 | Coupling | `predicate` (a guard of FSM B tests the register of FSM A) or `data` (A's register feeds B's next value); FSMs are never merged |
 
@@ -906,9 +909,26 @@ sha256 and versions, plus the `str1:` structural identity), `fsms`,
   assignment for a source state overrides an earlier one (two-process default
   `N = R` becomes an `implicit_hold` only where no later assignment applies).
 - *Outputs*: an output port is state-dependent when its Structural Analysis
-  fan-in cone contains the state register (or next-state signal); it is
-  Moore when the cone holds no module input and no other register, Mealy
-  when module inputs contribute, otherwise ambiguous. Names never decide.
+  fan-in cone contains the state register (or next-state signal). A
+  combinational output is Moore when the cone holds no module input and no
+  other register, Mealy when module inputs contribute, otherwise ambiguous.
+  Names never decide.
+- *Register boundary (KF-DQ-011.1)*: an output is `registered` when Structural
+  Analysis has a register record for that signal (matched by `sem1:`
+  identity) and every such record has a sequential boundary; a latch is not a
+  boundary. A registered output is a temporal boundary: its combinational
+  output cone ends at the register, so it is Moore and `other_sources` is
+  `[]`. The update logic behind it is recorded as `sampled_sources`: module
+  inputs and other registers reached through the data, control and enable
+  dependencies into the register (an `enable` is the condition under which it
+  updates) and the combinational cone behind them, stopping at registers;
+  clock, reset, hold, the output itself, the state register and the
+  next-state signal are excluded. Sampled sources never make an output Mealy.
+  The Structural Analysis `cone()` query is unchanged (KF-DQ-010 contract); it
+  still walks a register's own update logic when started at that register,
+  so the FSM analyzer applies the boundary itself. Corpus (350 modules): 445
+  outputs, Moore 333 / Mealy 92 / ambiguous 20; 313 registered (24 of them
+  the state register).
 - *Encoding* is classified from the actual resolved state values only (never
   names): gray (n >= 3 and every distinct-state transition flips one bit),
   binary (dense 0..n-1), one_hot (one bit per state and width =
@@ -944,11 +964,15 @@ gate runs after the structural gate and again after the split (with leakage).
 An FSM document is CURRENT only when derived from the current Semantic IR,
 Behavioral Semantics and Structural Analysis (sha256), reproduced by
 re-analysis and valid; stray files are ORPHAN / UNMANAGED (no override,
-regenerate with `make fsm` or `make pipeline`). Data manifest version 5 adds
+regenerate with `make fsm` or `make pipeline`). The validator checks
+`registered` against the Structural Analysis register records, independently
+of the analyzer's cone rule (Moore and `other_sources == []` for registered
+outputs; no clock / reset / state signal in `sampled_sources`); the corpus
+data test asserts the expected corpus classification. Data manifest version 5 adds
 `modules[].fsm {path, sha256, fsm_id, versions, module_id, status,
 derived_from {semantic_ir, behavior, structural + sha256}}`, `records[].fsm`
 for records with an FSM dependency and `versions.fsm` / `fsm_identity` /
-`fsm_analyzer`.
+`fsm_analyzer` (2 / 1 / 2 since KF-DQ-011.1; the manifest schema stays 5).
 
 **Leakage (KF-DQ-004).** FSM shapes occurring in modules of more than one
 split are reported as soft findings; a dataset record depending on FSM data
@@ -1048,7 +1072,7 @@ The implemented, versioned form of this layer is Structural Analysis v1
 
 > **Legacy / deprecated.** §8 and §9 describe the parser-integrated FSM path
 > (`scripts/fsm/fsm_*.py`, `scripts/structural/fsm_structural.py`, the IR v1
-> `fsm` field). The canonical FSM interpretation is FSM Analysis v1 (§5.5,
+> `fsm` field). The canonical FSM interpretation is FSM Analysis v2 (§5.5,
 > KF-DQ-011); the legacy path is kept unchanged until a separate removal task.
 
 FSM analysis is a consumer of the RTL IR and structural information.
@@ -1498,10 +1522,15 @@ All actions are validated before any is executed, and one unsafe entry aborts th
 
 `manifests/data_manifest.json` is the single authoritative inventory of the
 data repository (`scripts/core/data_manifest.py`, schema
-`kritva-forge-data-manifest` version 4: version 2 (KF-DQ-008) added the
+`kritva-forge-data-manifest` version 5: version 2 (KF-DQ-008) added the
 Semantic IR v2 references, see §5.2; version 3 (KF-DQ-009) added the
 Behavioral Semantics v1 references, see §5.3; version 4 (KF-DQ-010) added the
-Structural Analysis v1 references and record structural traceability, see §5.4). It is written as JSON because every
+Structural Analysis v1 references and record structural traceability, see §5.4;
+version 5 (KF-DQ-011) added the FSM Analysis references, see §5.5:
+`modules[].fsm`, `records[].fsm`, `versions.fsm` / `fsm_identity` /
+`fsm_analyzer` and the artifact kinds `fsm` / `fsm_report`. Since KF-DQ-011.1
+these reference FSM Analysis v2 (`normalized/fsm/v2`, schema 2, analyzer 2)
+without a manifest schema change). It is written as JSON because every
 other machine manifest in the repository is JSON, the standard library
 serialises it byte-deterministically (`sort_keys`), and it parses much faster
 than YAML at about 0.8 MB.

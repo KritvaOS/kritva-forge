@@ -3,7 +3,7 @@
 # SPDX-License-Identifier: Apache-2.0
 #
 # File        : model.py
-# Description : FSM Analysis v1 schema constants, vocabularies and identities (KF-DQ-011)
+# Description : FSM Analysis v2 schema constants, vocabularies and identities (KF-DQ-011, KF-DQ-011.1)
 #
 # Component   : Kritva Forge
 # Module      : fsm
@@ -12,10 +12,10 @@
 # Author      : Kritva Forge Team
 # Created     : 02-10-2026
 # =============================================================================
-"""FSM Analysis v1 contract (``kritva-forge-fsm-analysis`` version 1).
+"""FSM Analysis contract (``kritva-forge-fsm-analysis`` version 2).
 
 One JSON document per canonical module at
-``<data-root>/normalized/fsm/v1/<ip>/<module>.json``, derived only from the
+``<data-root>/normalized/fsm/v2/<ip>/<module>.json``, derived only from the
 module's Semantic IR v2, Behavioral Semantics v1 and Structural Analysis v1
 documents.  None of the inputs is modified, and the legacy parser-integrated
 FSM path (``scripts/fsm/fsm_*.py``, ``scripts/structural/fsm_structural.py``,
@@ -29,6 +29,16 @@ Identity namespace ``fsm``, version 1:
   projection (state count, encoding style, transition topology, guard shape);
 * document ``id`` - hash of the canonical document without ``id`` and
   ``fingerprint`` (no recursion; Step B review change 1).
+
+Schema version 2 (KF-DQ-011.1) changes only the output records: every output
+carries ``registered`` (the output is itself a register with a sequential
+boundary), ``sampled_sources`` (inputs / other registers read by its update
+logic, enable conditions included; clock, reset and hold excluded) and
+``other_sources`` (non-state sources of the *combinational* output cone, ``[]``
+for a registered output).
+A registered output is a temporal boundary and is therefore never Mealy.
+Version 1 documents (``normalized/fsm/v1``) are obsolete; identities (``fsm1:``)
+are unchanged.
 """
 
 from __future__ import annotations
@@ -38,10 +48,10 @@ import json
 import re
 
 SCHEMA_NAME = "kritva-forge-fsm-analysis"
-SCHEMA_VERSION = 1
+SCHEMA_VERSION = 2                    # KF-DQ-011.1: registered / sampled_sources outputs
 IDENTITY_VERSION = 1
 IDENTITY_PREFIX = f"fsm{IDENTITY_VERSION}:"
-ANALYZER_VERSION = 1
+ANALYZER_VERSION = 2                  # KF-DQ-011.1: register-boundary output classification
 PROVENANCE_VERSION = 1
 SEMANTIC_IR_VERSION = 2
 SEMANTIC_IDENTITY_VERSION = 1
@@ -49,8 +59,9 @@ BEHAVIOR_VERSION = 1
 BEHAVIOR_IDENTITY_VERSION = 1
 STRUCTURAL_VERSION = 1
 STRUCTURAL_IDENTITY_VERSION = 1
-ANALYZER = "kritva-forge scripts/fsm v1"
-OUTPUT_SUBDIR = "fsm/v1"
+ANALYZER = "kritva-forge scripts/fsm v2"
+OUTPUT_SUBDIR = "fsm/v2"
+OBSOLETE_OUTPUT_DIRS = ("normalized/fsm/v1",)  # superseded layouts (KF-DQ-011.1)
 OUTPUT_DIR = f"normalized/{OUTPUT_SUBDIR}"  # <data-root>/<OUTPUT_DIR>/<ip>/<module>.json
 REPORT_PATH = "analysis/reports/fsm_report.json"
 

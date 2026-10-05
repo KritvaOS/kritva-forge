@@ -3,7 +3,7 @@
 # SPDX-License-Identifier: Apache-2.0
 #
 # File        : test_fsm_fixtures.py
-# Description : FSM Analysis v1 golden fixtures and query API tests (KF-DQ-011)
+# Description : FSM Analysis v2 golden fixtures and query API tests (KF-DQ-011)
 #
 # Component   : Kritva Forge
 # Module      : tests/fsm
@@ -13,7 +13,7 @@
 # Created     : 02-10-2026
 # =============================================================================
 """25 golden FSM fixtures (AC-133 .. AC-157) through the real chain
-RTL -> Semantic IR v2 -> Behavioral Semantics v1 -> Structural Analysis v1 -> FSM Analysis v1,
+RTL -> Semantic IR v2 -> Behavioral Semantics v1 -> Structural Analysis v1 -> FSM Analysis v2,
 plus the query API (AC-223 .. AC-234) and determinism (AC-112 .. AC-117).
 
 Every document produced here must pass ``validate_module`` (see ``helpers.fsm_all``).
@@ -335,6 +335,12 @@ def ev(f):
     return {e["code"] for e in f["evidence"]}
 
 
+def names(docs, module, ids):
+    sem = docs[module + ":inputs"][0]
+    nm = {x["id"]: x["name"] for x in sem["ports"] + sem["signals"]}
+    return [nm[i] for i in ids]
+
+
 # ============================================================================= golden fixtures
 
 def test_g01_two_process_binary(docs):
@@ -348,7 +354,8 @@ def test_g01_two_process_binary(docs):
     assert (f["reset"]["kind"], f["reset"]["polarity"]) == ("async", "active_low")
     assert f["reset"]["state"] == next(s["id"] for s in f["states"] if s["name"] == "IDLE")
     assert f["next_signal"]["name"] == "state_nx" and f["hold"] == "implicit"
-    assert [(o["name"], o["kind"]) for o in f["outputs"]] == [("busy", "moore")]
+    assert [(o["name"], o["kind"], o["registered"], o["sampled_sources"]) for o in f["outputs"]] == \
+        [("busy", "moore", False, [])]                     # combinational Moore output (KF-DQ-011.1 AC-149)
     assert {"behavior_state_candidate", "closed_loop", "two_process_next_value", "reset_state"} <= ev(f)
     assert f["reachability"]["status"] == "known" and not f["reachability"]["unreachable"]
 
@@ -387,7 +394,8 @@ def test_g04_one_hot_ternary_self_loop(docs):
 def test_g05_one_bit_mealy(docs):
     f = only(docs["g05"])
     assert (f["status"], f["register"]["width"], f["encoding"]["style"]) == ("confirmed", 1, "binary")
-    assert [(o["name"], o["kind"]) for o in f["outputs"]] == [("out", "mealy")]
+    assert [(o["name"], o["kind"], o["registered"]) for o in f["outputs"]] == [("out", "mealy", False)]
+    assert [names(docs, "g05", o["other_sources"]) for o in f["outputs"]] == [["in"]]   # AC-148 unchanged
     assert "trivial_state_domain" not in ev(f)         # named states are evidence
 
 
@@ -491,9 +499,20 @@ def test_g19_actions(docs):
     assert ("ack", "no_state_predicate") in rejected(d)
 
 
+def test_g19_registered_outputs_are_moore(docs):
+    """KF-DQ-011.1 AC-145 .. AC-147, AC-151, AC-152: ack and cnt are registers - temporal boundaries."""
+    f = only(docs["g19"])
+    got = {o["name"]: (o["kind"], o["registered"], names(docs, "g19", o["sampled_sources"]), o["other_sources"])
+           for o in f["outputs"]}
+    assert got == {"ack": ("moore", True, [], []),          # clock / reset / state only (AC-151)
+                   "cnt": ("moore", True, ["req"], [])}     # samples req (enable condition, E1); action evidence
+    assert all(o["state_sources"] == [f["register"]["signal"]] for o in f["outputs"])
+
+
 def test_g20_mealy_from_next_state_block(docs):
     f = only(docs["g20"])
     assert f["style"] == "two_process" and [(o["name"], o["kind"]) for o in f["outputs"]] == [("z", "mealy")]
+    assert f["outputs"][0]["registered"] is False          # `output reg` assigned in always @* is combinational
     (a,) = f["actions"]
     assert Q.state(f, a["state"])["name"] == "S1" and a["kind"] == "output"
 
@@ -542,7 +561,7 @@ def test_g25_enable(docs):
 def test_every_fixture_has_a_document_and_zero_fsm_documents_are_valid(docs):
     for name in RTL:
         d = docs[name]
-        assert d["schema"] == {"name": F.SCHEMA_NAME, "version": 1}
+        assert d["schema"] == {"name": F.SCHEMA_NAME, "version": 2}
         assert d["counts"]["fsms"] == len(d["fsms"])
 
 
