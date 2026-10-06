@@ -239,6 +239,10 @@ class Context:
         for ip, mod in sorted(self.modules):
             exp[f"normalized/ir/{ip}/modules/{mod}.yaml"] = ("canonical_ir", ip, mod)
             exp[f"generated/prompts/{ip}/{mod}.generate.txt"] = ("prompt", ip, mod)
+            exp[f"{SEMANTIC_DIR}/{ip}/{mod}.json"] = ("semantic_ir", ip, mod)          # KF-DQ-008
+            exp[f"{BEHAVIOR_DIR}/{ip}/{mod}.json"] = ("behavior", ip, mod)             # KF-DQ-009
+            exp[f"{STRUCTURAL_DIR}/{ip}/{mod}.json"] = ("structural", ip, mod)         # KF-DQ-010
+            exp[f"{FSM_DIR}/{ip}/{mod}.json"] = ("fsm", ip, mod)                       # KF-DQ-011
         for ip in self.ips:
             exp[f"normalized/ir/{ip}/hierarchy.yaml"] = ("ip_metadata", ip, None)
             exp[f"normalized/ir/{ip}/summary.yaml"] = ("ip_metadata", ip, None)
@@ -249,6 +253,10 @@ class Context:
             "analysis/reports/pipeline_stats.json": "pipeline_stats",
             "analysis/reports/split_leakage_report.json": "split_leakage_report",
             "analysis/reports/provenance_report.json": "provenance_report",
+            SEMANTIC_REPORT_PATH: "semantic_ir_report",
+            BEHAVIOR_REPORT_PATH: "behavior_report",
+            STRUCTURAL_REPORT_PATH: "structural_report",
+            FSM_REPORT_PATH: "fsm_report",
             REPORT_PATH: "stale_artifact_report",
             "splits/split_manifest.json": "split_manifest",
             "manifests/provenance_manifest.json": "provenance_manifest",
@@ -429,6 +437,18 @@ def classify(data_root, use_recorded: bool = True) -> dict:
                     add(rel, kind, "ORPHAN", f"source {ctx.modules[(ip, mod)]['source']['path']} missing "
                         f"({ctx.modules[(ip, mod)]['transformation']})", ip, mod)
                     counters["invalid_source_identities"] += 1
+            elif kind == "semantic_ir":
+                state, reason = _semantic_state(ctx, path, ip, mod, counters)
+                add(rel, kind, state, reason, ip, mod)
+            elif kind == "behavior":
+                state, reason = _behavior_state(ctx, root, path, ip, mod, counters)
+                add(rel, kind, state, reason, ip, mod)
+            elif kind == "structural":
+                state, reason = _structural_state(ctx, root, path, ip, mod, counters)
+                add(rel, kind, state, reason, ip, mod)
+            elif kind == "fsm":
+                state, reason = _fsm_state(ctx, root, path, ip, mod, counters)
+                add(rel, kind, state, reason, ip, mod)
             elif kind == "ip_metadata":
                 state = "CURRENT" if ip in ctx.raw_ips else "ORPHAN"
                 add(rel, kind, state, None if state == "CURRENT" else f"IP {ip} has no raw RTL", ip)
@@ -439,7 +459,39 @@ def classify(data_root, use_recorded: bool = True) -> dict:
                     None if ok else "RTL copy differs from its canonical source", ip)
             else:
                 parts = rel.split("/")
-                if len(parts) >= 3 and parts[1] == "ir" and parts[2] not in ctx.ips:
+                if len(parts) >= 2 and parts[1] == "fsm":
+                    if any(rel.startswith(d + "/") for d in FSM_OBSOLETE_DIRS):
+                        add(rel, "fsm", "STALE", "obsolete FSM Analysis v1 document (superseded by "
+                            f"{FSM_DIR}, KF-DQ-011.1); remove it", parts[3] if len(parts) > 3 else None)
+                        counters["obsolete_schema"] += 1
+                    elif rel.startswith(FSM_DIR + "/") and len(parts) == 5 and parts[4].endswith(".json"):
+                        add(rel, "fsm", "ORPHAN",
+                            f"module {parts[3]}/{parts[4][:-5]} has no canonical IR", parts[3])
+                    else:
+                        add(rel, "fsm_other", "UNMANAGED",
+                            f"not part of the FSM Analysis layout ({FSM_DIR}/<ip>/<module>.json)")
+                elif len(parts) >= 2 and parts[1] == "structural":
+                    if rel.startswith(STRUCTURAL_DIR + "/") and len(parts) == 5 and parts[4].endswith(".json"):
+                        add(rel, "structural", "ORPHAN",
+                            f"module {parts[3]}/{parts[4][:-5]} has no canonical IR", parts[3])
+                    else:
+                        add(rel, "structural_other", "UNMANAGED",
+                            f"not part of the Structural Analysis layout ({STRUCTURAL_DIR}/<ip>/<module>.json)")
+                elif len(parts) >= 2 and parts[1] == "behavior":
+                    if rel.startswith(BEHAVIOR_DIR + "/") and len(parts) == 5 and parts[4].endswith(".json"):
+                        add(rel, "behavior", "ORPHAN",
+                            f"module {parts[3]}/{parts[4][:-5]} has no canonical IR", parts[3])
+                    else:
+                        add(rel, "behavior_other", "UNMANAGED",
+                            f"not part of the Behavioral Semantics layout ({BEHAVIOR_DIR}/<ip>/<module>.json)")
+                elif len(parts) >= 2 and parts[1] == "semantic_ir":
+                    if rel.startswith(SEMANTIC_DIR + "/") and len(parts) == 5 and parts[4].endswith(".json"):
+                        add(rel, "semantic_ir", "ORPHAN",
+                            f"module {parts[3]}/{parts[4][:-5]} has no canonical IR", parts[3])
+                    else:
+                        add(rel, "semantic_other", "UNMANAGED",
+                            f"not part of the Semantic IR layout ({SEMANTIC_DIR}/<ip>/<module>.json)")
+                elif len(parts) >= 3 and parts[1] == "ir" and parts[2] not in ctx.ips:
                     add(rel, "ir_other", "ORPHAN", f"IP {parts[2]} has no canonical module IR", parts[2])
                 elif len(parts) >= 4 and parts[1] == "ir" and parts[3] == "rtl":
                     add(rel, "rtl_copy", "STALE", "RTL copy not referenced by any canonical module", parts[2])
@@ -553,6 +605,18 @@ def classify(data_root, use_recorded: bool = True) -> dict:
             key = "provenance_version" if kind == "provenance_report" else "leakage_schema_version"
             ok = isinstance(data, dict) and data.get(key) == version and data.get("status") == "PASS"
             add(rel, kind, "CURRENT" if ok else "STALE", None if ok else "obsolete schema or non-PASS report")
+        elif kind == "semantic_ir_report":
+            state, reason = _semantic_report_state(root, path)
+            add(rel, kind, state, reason)
+        elif kind == "behavior_report":
+            state, reason = _behavior_report_state(root, path)
+            add(rel, kind, state, reason)
+        elif kind == "structural_report":
+            state, reason = _structural_report_state(root, path)
+            add(rel, kind, state, reason)
+        elif kind == "fsm_report":
+            state, reason = _fsm_report_state(root, path)
+            add(rel, kind, state, reason)
         elif kind == "pipeline_stats":
             data = _load_json(path)
             ok = isinstance(data, dict) and data.get("ips") == len(ctx.ips) and data.get("modules") == len(ctx.modules)
@@ -653,6 +717,10 @@ def build_report(result: dict, inventory_status: str | None, override: bool = Fa
         "invalid_source_identities": c["invalid_source_identities"],
         "invalid_module_identities": c["invalid_module_identities"],
         "missing_ir_references": c["missing_ir_references"],
+        "invalid_semantic_ir": c["invalid_semantic_ir"],
+        "invalid_behavior": c["invalid_behavior"],
+        "invalid_structural": c["invalid_structural"],
+        "invalid_fsm": c["invalid_fsm"],
         "obsolete_schema": c["obsolete_schema"],
         "absolute_paths": c["absolute_paths"],
         "symlinks": c["symlinks"],
@@ -710,8 +778,8 @@ def write(data_root, override: bool = False) -> dict:
 def format_report(report: dict) -> str:
     rows = ["artifact_records_checked", "expected_artifacts", "current", "stale", "orphan", "historical",
             "unmanaged", "missing_expected", "duplicate_artifacts", "invalid_provenance",
-            "invalid_source_identities", "invalid_module_identities", "missing_ir_references",
-            "obsolete_schema", "absolute_paths", "symlinks", "dataset_records_checked",
+            "invalid_source_identities", "invalid_module_identities", "missing_ir_references", "invalid_semantic_ir", "invalid_behavior",
+            "invalid_structural", "invalid_fsm", "obsolete_schema", "absolute_paths", "symlinks", "dataset_records_checked",
             "split_records_checked", "cleanup_candidates", "remediation_counts", "inventory_status"]
     lines = [f"Stale artifact check: {report['status']}" + (" (override)" if report.get("override") else "")]
     lines += [f"  {k.replace('_', ' '):26s}: {report.get(k)}" for k in rows if k in report]

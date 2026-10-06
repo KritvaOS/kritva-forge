@@ -447,9 +447,39 @@ def run_pipeline(
         #
         # KF-DQ-006: stale-artifact gate before dataset generation.  The
         # dataset stage consumes canonical IR and generated/prompts, so any
-        # stale, orphan or unmanaged artifact there aborts the run.
+        # stale, orphan or unmanaged artifact there aborts the run (this
+        # includes normalized/semantic_ir/v2, KF-DQ-008, and
+        # normalized/behavior/v1, KF-DQ-009, derived just before the gate).
         #
+        write_behavior(data_root)
+        write_structural(data_root)          # KF-DQ-010, derived from Semantic IR + behavior
+        write_fsm(data_root)                 # KF-DQ-011, derived from Semantic IR + behavior + structure
         stale_gate(data_root, scope="inputs")
+
+        #
+        # KF-DQ-008: Semantic IR v2 gate - full schema/relationship
+        # validation of every document; writes its report, which the
+        # post-run stale gate verifies against the semantic corpus.
+        #
+        semantic_gate(data_root)
+
+        #
+        # KF-DQ-009: Behavioral Semantics v1 gate (schema, references,
+        # classification evidence, consistency with Semantic IR, re-analysis).
+        #
+        behavior_gate(data_root)
+
+        #
+        # KF-DQ-010: Structural Analysis v1 gate (schema, identities,
+        # references, provenance, read/write consistency, re-analysis).
+        #
+        structural_gate(data_root)
+
+        #
+        # KF-DQ-011: FSM Analysis v2 gate (schema, identities, references,
+        # provenance, encoding / reachability consistency, re-analysis).
+        #
+        fsm_gate(data_root)
 
         generate_datasets(
             normalized_root,
@@ -459,6 +489,18 @@ def run_pipeline(
             splits_root=splits_root,
             reports_root=reports_root,
         )
+
+        #
+        # KF-DQ-010: final structural gate with the KF-DQ-004 leakage check
+        # against the split just written; writes structural_report.json.
+        #
+        structural_gate(data_root, final=True)
+
+        #
+        # KF-DQ-011: final FSM gate with the KF-DQ-004 leakage check against
+        # the split just written; writes fsm_report.json.
+        #
+        fsm_gate(data_root, final=True)
 
         #
         # KF-DQ-005: canonical RTL provenance manifest + validation.
@@ -483,7 +525,11 @@ def run_pipeline(
         manifest_gate(data_root)
 
     check_portable_provenance(
-        [normalized_root, prompt_root, reports_root, datasets_root, splits_root,
+        [normalized_root, os.path.join(os.path.dirname(normalized_root), "semantic_ir"),
+         os.path.join(os.path.dirname(normalized_root), "behavior"),
+         os.path.join(os.path.dirname(normalized_root), "structural"),
+         os.path.join(os.path.dirname(normalized_root), "fsm"),
+         prompt_root, reports_root, datasets_root, splits_root,
          str(ForgeDataPaths.from_root(data_root).manifests)]
     )
     print("[INFO] Portable provenance OK (no absolute host paths)")

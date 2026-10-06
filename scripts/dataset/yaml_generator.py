@@ -625,6 +625,64 @@ def build_summary_yaml(
             )
     }
 
+def write_semantic_ir(ip_name, module_name, modules, is_top, out_root):
+    """Write normalized/semantic_ir/v2/<ip>/<module>.json (Semantic IR v2, KF-DQ-008).
+
+    ``out_root`` is the canonical ``normalized/ir`` root; the semantic tree is
+    its sibling ``normalized/semantic_ir/v2``.  Raises if the module has no
+    extracted semantic document (nothing is skipped silently).
+    """
+    import hashlib
+    from importlib.metadata import PackageNotFoundError, version
+
+    from scripts.core.provenance import module_id
+    from scripts.semantic_ir import model as SM
+    from scripts.semantic_ir.extractor import finalize
+
+    mod = modules[module_name]
+    doc = mod.get("_semantic")
+    if doc is None:
+        raise RuntimeError(
+            f"no Semantic IR v2 extracted for {ip_name}/{module_name}"
+        )
+    if "generator" not in doc:
+        siblings = {
+            name: other.get("_semantic")
+            for name, other in modules.items()
+            if other.get("_semantic") is not None
+        }
+        source_path = mod.get("source_path") or mod.get("source_file")
+        with open(source_path, "rb") as handle:
+            source_sha = hashlib.sha256(handle.read()).hexdigest()
+        try:
+            parser_version = "pyslang " + version("pyslang")
+        except PackageNotFoundError:
+            parser_version = "pyslang unknown"
+        finalize(
+            doc,
+            ip=ip_name,
+            module_id=module_id(ip_name, module_name),
+            source_path=mod["source_file"],
+            source_sha256=source_sha,
+            siblings=siblings,
+            sibling_ids={name: module_id(ip_name, name) for name in siblings},
+            is_top=is_top,
+            parser_version=parser_version,
+        )
+    text = SM.dumps(doc)
+    path = os.path.join(
+        os.path.dirname(os.path.abspath(out_root)),
+        *SM.OUTPUT_SUBDIR.split("/"),
+        ip_name,
+        f"{module_name}.json",
+    )
+    _assert_portable(text, path)
+    os.makedirs(os.path.dirname(path), exist_ok=True)
+    with open(path, "w", encoding="utf-8") as handle:
+        handle.write(text)
+    return path
+
+
 def write_ip_outputs(
         ip_name,
         modules,
@@ -744,6 +802,17 @@ def write_ip_outputs(
         )
 
         yaml_count += 1
+
+        #
+        # KF-DQ-008: Semantic IR v2 next to the (unchanged) v1 IR
+        #
+        write_semantic_ir(
+            ip_name,
+            module_name,
+            modules,
+            spec["is_top"],
+            out_root,
+        )
 
         #
         # Prompt
