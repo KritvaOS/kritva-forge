@@ -1,0 +1,28 @@
+Write synthesizable Verilog/SystemVerilog RTL for the hardware module specified below. The specification describes behavior and structure, not source code.
+
+## Module
+Name: g14
+Ports:
+- clk: input, 1 bit
+- rst_n: input, 1 bit
+- go: input, 1 bit
+- st: output, 2 bits
+
+## Clocks and resets
+- clock clk, rising edge
+- reset rst_n: async, active low (candidate)
+
+## Registers
+- st (2 bits); updated on the rising edge of clk; reset by rst_n to pkg_idle; controlled by go; otherwise holds its value (implicit hold)
+
+## State machines
+FSM 1: state register st (2 bits); status candidate; quality low; one-process; encoding unknown
+Timing: clock clk, rising edge; reset rst_n (async, candidate); enabled by go; implicit hold
+States: unresolved
+Reachability from the reset state: unknown
+Output st: moore, registered; updated at the clock edge from go
+Uncertain: incomplete domain, unknown source, unresolved constant
+Transitions:
+- an unknown state -> an unknown state when st is pkg_idle and go is 1 [unknown]
+- an unknown state -> an unknown state when st matches no listed value (default) [unknown]
+- an unknown state -> an unknown state when st is pkg_idle and go is 0 (holds) [unknown] (priority unknown)

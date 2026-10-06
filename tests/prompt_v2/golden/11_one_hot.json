@@ -1,0 +1,163 @@
+{
+  "abstraction": {
+    "guard_fallbacks": 0,
+    "rendering": "dependency relationships and natural-language conditions; no HDL expressions"
+  },
+  "fsm": {
+    "actions_rendered": 0,
+    "ambiguous": 0,
+    "candidate": 0,
+    "confirmed": 1,
+    "couplings": 0,
+    "fsms": 1,
+    "quality": {
+      "ambiguous": 0,
+      "high": 1,
+      "low": 0,
+      "medium": 0,
+      "unsupported": 0
+    },
+    "section_truncated": false,
+    "states": 3,
+    "transitions": 6,
+    "transitions_rendered": 4,
+    "unknowns": 0,
+    "unsupported": 0
+  },
+  "generator": {
+    "name": "kritva-forge scripts/prompt_v2 v1",
+    "version": 1
+  },
+  "identity": "pv2:67e38a85f55e61d7",
+  "inputs": {
+    "behavior": {
+      "identity_version": 1,
+      "path": "normalized/behavior/v1/fx/g04.json",
+      "schema_version": 1,
+      "sha256": "2c045cb80ba0cab5a09c3297e200b1559fd8e20fc77f429c122a5249ec6c1d68"
+    },
+    "fsm": {
+      "identity_version": 1,
+      "path": "normalized/fsm/v2/fx/g04.json",
+      "schema_version": 2,
+      "sha256": "ac588342a15c58bf637003f7cb5d091ea5099a6066dbad2b5392fa6482d68a6b"
+    },
+    "semantic_ir": {
+      "identity_version": 1,
+      "path": "normalized/semantic_ir/v2/fx/g04.json",
+      "schema_version": 2,
+      "sha256": "bb1d4d54193f7ae9fdc709c4adf8485e57d62a0db9a34058b4fa01ffc0f04e55"
+    },
+    "structural": {
+      "identity_version": 1,
+      "path": "normalized/structural/v1/fx/g04.json",
+      "schema_version": 1,
+      "sha256": "b9b6cf39b31213a2cda3e8d83ac25631d617c6ffe4a572f31230bf9adfee6b62"
+    }
+  },
+  "leakage": {
+    "completion_tokens": 103,
+    "longest_run": 2,
+    "longest_run_tokens": ": A",
+    "metric_version": "leakage-v1",
+    "overlap": 0.0,
+    "overlapping_ngrams": 0,
+    "prompt_ngrams": 120,
+    "prompt_tokens": 224,
+    "raw_overlap": 0.0,
+    "status": "PASS",
+    "threshold_version": "thresholds-v1",
+    "thresholds": {
+      "longest_run_max": 6,
+      "overlap_max": 0.2
+    },
+    "tokenizer_version": "sv-lex-v1"
+  },
+  "module": {
+    "ip": "fx",
+    "module_id": "mod1:3474fab8834827c9",
+    "name": "g04"
+  },
+  "prompt": {
+    "budget_bytes": 32768,
+    "bytes": 884,
+    "omitted_sections": [
+      "Submodules"
+    ],
+    "original_bytes": 884,
+    "path": "generated/prompt/v2/fx/g04.behavior_aware.txt",
+    "sections": [
+      {
+        "emitted": null,
+        "name": "Module",
+        "records": null,
+        "truncated": false
+      },
+      {
+        "emitted": null,
+        "name": "Clocks and resets",
+        "records": null,
+        "truncated": false
+      },
+      {
+        "emitted": 1,
+        "name": "Registers",
+        "records": 1,
+        "truncated": false
+      },
+      {
+        "emitted": 1,
+        "name": "Combinational logic",
+        "records": 1,
+        "truncated": false
+      },
+      {
+        "emitted": 4,
+        "name": "State machines",
+        "records": 4,
+        "truncated": false
+      }
+    ],
+    "sha256": "2ee3b198d6bf0a5950e090507afce39018b0d2634d3dd1210cbf41c3cab343f1",
+    "truncated": false,
+    "truncated_sections": []
+  },
+  "schema": {
+    "name": "kritva-forge-prompt",
+    "version": 2
+  },
+  "source": {
+    "path": "raw/rtl/original/fx/fx.sv",
+    "sha256": "4f209f2743e8f2dff8dfa0af0223406d130095514703a210813febe1ede10edc"
+  },
+  "uncertainty": {
+    "by_category": {
+      "ambiguous": 0,
+      "candidate": 0,
+      "derived": 0,
+      "unknown": 0,
+      "unresolved": 0,
+      "unsupported": 0
+    },
+    "markers": {}
+  },
+  "variant": "behavior_aware",
+  "versions": {
+    "behavior": 1,
+    "behavior_identity": 1,
+    "fsm": 2,
+    "fsm_analyzer": 2,
+    "fsm_identity": 1,
+    "leakage_metric": "leakage-v1",
+    "leakage_thresholds": "thresholds-v1",
+    "prompt": 2,
+    "prompt_generator": 1,
+    "prompt_identity": 1,
+    "semantic_identity": 1,
+    "semantic_ir": 2,
+    "structural": 1,
+    "structural_analyzer": 1,
+    "structural_identity": 1,
+    "tokenizer": "sv-lex-v1"
+  }
+}

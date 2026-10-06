@@ -26,8 +26,9 @@ Register boundary (KF-DQ-011.1): ``registered`` is checked against the
 Structural Analysis register records independently of the analyzer's cone
 logic; a registered output must be Moore with ``other_sources == []``, and its
 ``sampled_sources`` may hold only module inputs / registers, never the output
-itself, the state register / next-state signal, or the register's clock or
-reset (enable-condition sources are sampled sources, E1).  The validator
+itself, the state register / next-state signal, the register's clock or
+reset, or the source of a hold dependency into it (KF-DQ-012 A4); enable-
+condition sources are sampled sources (E1).  The validator
 stays corpus-agnostic: corpus counts are asserted by the corpus data test
 (Appendix C2).
 
@@ -405,6 +406,8 @@ def _validate_register_boundary(f, o, p, sids, ports, st):
         timing.add((r.get("clock") or {}).get("signal"))
         timing.update(x.get("signal") for x in r.get("resets", []))
     state = {f["register"]["signal"], (f.get("next_signal") or {}).get("signal")}
+    holds = {d.get("source") for d in st.get("dependencies", [])                       # KF-DQ-012 A4 (R-1)
+             if d.get("target") == o["signal"] and d.get("kind") == "hold"}
     for x in ss:
         if x not in sids:
             p.append(("semantic_reference", f"{where}: sampled source {x} not in Semantic IR"))
@@ -412,6 +415,8 @@ def _validate_register_boundary(f, o, p, sids, ports, st):
             p.append(("consistency", f"{where}: sampled source {x} is the output itself or the FSM state"))
         elif x in timing:
             p.append(("consistency", f"{where}: clock / reset {x} recorded as a sampled source"))
+        elif x in holds:
+            p.append(("consistency", f"{where}: hold source {x} recorded as a sampled source"))
         elif x not in regs and (ports.get(x) or {}).get("direction") not in ("input", "inout"):
             p.append(("consistency", f"{where}: sampled source {x} is neither a module input nor a register"))
 

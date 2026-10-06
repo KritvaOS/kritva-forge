@@ -210,7 +210,7 @@ def test_split_change_makes_report_stale(tree):
 # ----------------------------------------------------------------------------- data manifest v5 (AC-197 .. AC-206)
 def test_manifest_v5_references_fsm(built):
     m = json.loads((built.root / DM.MANIFEST_PATH).read_text())
-    assert m["schema"] == {"name": "kritva-forge-data-manifest", "version": 5}
+    assert m["schema"] == {"name": "kritva-forge-data-manifest", "version": 6}
     assert (m["versions"]["fsm"], m["versions"]["fsm_identity"], m["versions"]["fsm_analyzer"]) == (2, 1, 2)
     arts = {a["path"]: a for a in m["artifacts"]}
     for mod in m["modules"]:

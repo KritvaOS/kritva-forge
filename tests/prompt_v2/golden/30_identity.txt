@@ -1,0 +1,18 @@
+Write synthesizable Verilog/SystemVerilog RTL for the hardware module specified below. The specification describes behavior and structure, not source code.
+
+## Module
+Name: g17
+Ports:
+- clk: input, 1 bit
+- d: input, 4 bits
+- state: output, 4 bits
+- next_state: output, 4 bits
+
+## Clocks and resets
+- clock clk, rising edge
+
+## Registers
+- state (4 bits); updated on the rising edge of clk; next value depends on d
+
+## Combinational logic
+- next_state depends on d

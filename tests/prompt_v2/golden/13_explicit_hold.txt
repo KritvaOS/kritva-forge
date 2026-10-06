@@ -1,0 +1,30 @@
+Write synthesizable Verilog/SystemVerilog RTL for the hardware module specified below. The specification describes behavior and structure, not source code.
+
+## Module
+Name: g02
+Ports:
+- clk: input, 1 bit
+- rst: input, 1 bit
+- a: input, 1 bit
+- b: input, 1 bit
+- st: output, 2 bits
+
+## Clocks and resets
+- clock clk, rising edge
+- reset rst: sync, active high (candidate)
+
+## Registers
+- st (2 bits); updated on the rising edge of clk; reset by rst to 0; controlled by a, b; otherwise holds its value (mixed hold)
+
+## State machines
+FSM 1: state register st (2 bits); status confirmed; quality medium; one-process; encoding binary
+Timing: clock clk, rising edge; reset rst (sync, candidate) to value 0; enabled by a, b; mixed hold
+States: value 0 (reset), value 1, value 2
+Reachability from the reset state: known (transition graph only)
+Output st: moore, registered; updated at the clock edge from a, b
+Transitions:
+- value 0 -> value 1 when a is 1
+- value 0 -> value 0 when a is 0 (explicit hold)
+- value 1 -> value 2 when b is 1 [derived]
+- value 2 -> value 0 [derived]
+- value 1 -> value 1 when b is 0 (holds) [derived] (priority unknown)

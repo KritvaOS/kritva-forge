@@ -1,0 +1,161 @@
+{
+  "abstraction": {
+    "guard_fallbacks": 0,
+    "rendering": "dependency relationships and natural-language conditions; no HDL expressions"
+  },
+  "fsm": {
+    "actions_rendered": 0,
+    "ambiguous": 0,
+    "candidate": 0,
+    "confirmed": 1,
+    "couplings": 0,
+    "fsms": 1,
+    "quality": {
+      "ambiguous": 0,
+      "high": 0,
+      "low": 0,
+      "medium": 1,
+      "unsupported": 0
+    },
+    "section_truncated": false,
+    "states": 3,
+    "transitions": 5,
+    "transitions_rendered": 4,
+    "unknowns": 0,
+    "unsupported": 0
+  },
+  "generator": {
+    "name": "kritva-forge scripts/prompt_v2 v1",
+    "version": 1
+  },
+  "identity": "pv2:bd2f94a85ff81c00",
+  "inputs": {
+    "behavior": {
+      "identity_version": 1,
+      "path": "normalized/behavior/v1/fx/g06.json",
+      "schema_version": 1,
+      "sha256": "b0e0d17f883ddd7d71dd0c15acf5b25ecc85e4d381d3759747966d7628993e3e"
+    },
+    "fsm": {
+      "identity_version": 1,
+      "path": "normalized/fsm/v2/fx/g06.json",
+      "schema_version": 2,
+      "sha256": "0a69057e13231603667668591f12b820105e29a3901d39973c3c52eee57d79f5"
+    },
+    "semantic_ir": {
+      "identity_version": 1,
+      "path": "normalized/semantic_ir/v2/fx/g06.json",
+      "schema_version": 2,
+      "sha256": "b1be3453ae311d92d49d2b84391fbff4a07cb43e8919d905a18a27479fce0916"
+    },
+    "structural": {
+      "identity_version": 1,
+      "path": "normalized/structural/v1/fx/g06.json",
+      "schema_version": 1,
+      "sha256": "f13a5c0fe893088f82eea66d2c6de3f759b91139ae2a9f646766368077f1f929"
+    }
+  },
+  "leakage": {
+    "completion_tokens": 69,
+    "longest_run": 2,
+    "longest_run_tokens": "1 :",
+    "metric_version": "leakage-v1",
+    "overlap": 0.0,
+    "overlapping_ngrams": 0,
+    "prompt_ngrams": 142,
+    "prompt_tokens": 251,
+    "raw_overlap": 0.0,
+    "status": "PASS",
+    "threshold_version": "thresholds-v1",
+    "thresholds": {
+      "longest_run_max": 6,
+      "overlap_max": 0.2
+    },
+    "tokenizer_version": "sv-lex-v1"
+  },
+  "module": {
+    "ip": "fx",
+    "module_id": "mod1:52152f803213100f",
+    "name": "g06"
+  },
+  "prompt": {
+    "budget_bytes": 32768,
+    "bytes": 1052,
+    "omitted_sections": [
+      "Combinational logic",
+      "Submodules"
+    ],
+    "original_bytes": 1052,
+    "path": "generated/prompt/v2/fx/g06.behavior_aware.txt",
+    "sections": [
+      {
+        "emitted": null,
+        "name": "Module",
+        "records": null,
+        "truncated": false
+      },
+      {
+        "emitted": null,
+        "name": "Clocks and resets",
+        "records": null,
+        "truncated": false
+      },
+      {
+        "emitted": 1,
+        "name": "Registers",
+        "records": 1,
+        "truncated": false
+      },
+      {
+        "emitted": 4,
+        "name": "State machines",
+        "records": 4,
+        "truncated": false
+      }
+    ],
+    "sha256": "e16a47e7e3c0b845534d22413f681ca6abd1df9a999ec2088757165803af3273",
+    "truncated": false,
+    "truncated_sections": []
+  },
+  "schema": {
+    "name": "kritva-forge-prompt",
+    "version": 2
+  },
+  "source": {
+    "path": "raw/rtl/original/fx/fx.sv",
+    "sha256": "7937fcaf05cf283c40fe15d40da4e4072f967660388219f867cb0b036f6647f3"
+  },
+  "uncertainty": {
+    "by_category": {
+      "ambiguous": 0,
+      "candidate": 0,
+      "derived": 1,
+      "unknown": 1,
+      "unresolved": 0,
+      "unsupported": 0
+    },
+    "markers": {
+      "[derived]": 1,
+      "priority unknown": 1
+    }
+  },
+  "variant": "behavior_aware",
+  "versions": {
+    "behavior": 1,
+    "behavior_identity": 1,
+    "fsm": 2,
+    "fsm_analyzer": 2,
+    "fsm_identity": 1,
+    "leakage_metric": "leakage-v1",
+    "leakage_thresholds": "thresholds-v1",
+    "prompt": 2,
+    "prompt_generator": 1,
+    "prompt_identity": 1,
+    "semantic_identity": 1,
+    "semantic_ir": 2,
+    "structural": 1,
+    "structural_analyzer": 1,
+    "structural_identity": 1,
+    "tokenizer": "sv-lex-v1"
+  }
+}

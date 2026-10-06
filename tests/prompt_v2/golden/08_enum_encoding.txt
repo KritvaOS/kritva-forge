@@ -1,0 +1,32 @@
+Write synthesizable Verilog/SystemVerilog RTL for the hardware module specified below. The specification describes behavior and structure, not source code.
+
+## Module
+Name: g03
+Ports:
+- clk: input, 1 bit
+- rst_n: input, 1 bit
+- go: input, 1 bit
+- ack: output, 1 bit
+
+## Clocks and resets
+- clock clk, rising edge
+- reset rst_n: async, active low
+
+## Registers
+- cur (unknown width); updated on the rising edge of clk; reset by rst_n to S_IDLE; next value depends on nxt
+
+## Combinational logic
+- nxt depends on cur; selected by cur, go
+- ack (continuous) depends on S_ACK, cur
+
+## State machines
+FSM 1: state register cur (2 bits); status confirmed; quality high; two-process; encoding custom
+Timing: clock clk, rising edge; reset rst_n (async) to S_IDLE; implicit hold
+States: S_IDLE = 0 (reset), S_WAIT = 1, S_ACK = 3
+Reachability from the reset state: known (transition graph only)
+Output ack: moore
+Transitions:
+- S_IDLE -> S_IDLE (holds) [derived]
+- S_IDLE -> S_WAIT when go is 1
+- S_WAIT -> S_ACK
+- S_ACK -> S_IDLE (default) [derived]

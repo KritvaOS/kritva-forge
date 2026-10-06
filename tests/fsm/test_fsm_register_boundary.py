@@ -198,6 +198,17 @@ def test_clock_and_reset_are_not_sampled_sources(ref, kind):
     _fails(doc, inputs, "consistency")
 
 
+def test_hold_source_is_not_a_sampled_source(ref):
+    """KF-DQ-012 A4 (R-1 from the KF-DQ-011.1 review): a hold dependency is not a sampled input."""
+    doc, inputs = ref
+    o = _q(doc)
+    x = o["sampled_sources"][0]
+    deps = inputs[6]["dependencies"]
+    deps.append({**next(d for d in deps if d["target"] == o["signal"]), "source": x, "kind": "hold"})
+    got = V.validate_module(doc, *inputs)
+    assert any(c == "consistency" and "hold source" in m for c, m in got), got[:6]
+
+
 def test_state_register_is_not_a_sampled_source(ref):
     doc, inputs = ref
     o = _q(doc)

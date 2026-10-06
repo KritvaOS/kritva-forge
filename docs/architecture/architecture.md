@@ -1014,6 +1014,174 @@ deterministic copies.
 **Boundaries.** No RTL parsing, elaboration, SAT / SMT feasibility, timing,
 synthesis, RTL generation or modification of upstream artifacts.
 
+## 5.6 Prompt v2 — behavior-aware prompts (KF-DQ-012)
+
+**Purpose.** Prompt v2 turns the four analysis layers of a module into a
+natural-language description of its interface and behavior, for RTL
+generation and completion tasks. It describes *what the hardware does*
+(clocks and resets, registers, combinational logic, FSMs, hierarchy) without
+reproducing the RTL that answers the task. It is an abstraction of the
+canonical evidence, never a re-reading of the source.
+
+**Data flow.**
+
+```text
+Semantic IR v2 + Behavioral Semantics v1 + Structural Analysis v1 + FSM Analysis v2 -> Prompt v2
+```
+
+- `scripts/prompt_v2/render.py` reads the four persisted documents of a module
+  and checks them before rendering. It fails closed (`PromptError`) when:
+  - a schema, identity or analyzer version differs (FSM Analysis must be v2,
+    analyzer 2; FSM v1 is rejected);
+  - the four module identities differ;
+  - the provenance chain is broken: behavior ← Semantic IR; structural ←
+    Semantic IR and behavior; FSM ← Semantic IR, behavior and structural
+    (path and sha256);
+  - the module source named by Semantic IR `module.source` is missing or its
+    sha256 differs.
+- Output layout: `generated/prompt/v2/<ip>/<module>.behavior_aware.txt` (prompt)
+  and `.json` (sidecar), one pair per canonical module, zero-FSM modules
+  included. `behavior_aware` is the only variant; any other variant name is
+  UNMANAGED.
+- **Prompt v1 is unchanged.** `generated/prompts/` (§11.2) keeps its
+  generator, layout and dataset use. No dataset record consumes Prompt v2
+  before KF-DQ-013 (the validator fails a record that does).
+
+**Abstraction contract.** Sections, in fixed order:
+
+1. Module (parameters, ports in Semantic IR order).
+2. Clocks and resets.
+3. Registers: width, clock edge, reset value, what the next value depends on,
+   what controls it, hold.
+4. Combinational logic.
+5. State machines: status, quality, style and encoding; timing; states;
+   reachability; outputs; transitions; actions; couplings.
+6. Submodules.
+
+Rendering rules:
+
+- Guards use a fixed natural-language vocabulary: `is`, `is not`, `and`,
+  `or`, `not`; for example `IDLE -> RUN when start is 1`. A test of the
+  source state is absorbed into the transition source. An expression that
+  cannot be rendered becomes `a condition on <signals>` and is counted in
+  `abstraction.guard_fallbacks`.
+- The prompt never contains HDL operators or keywords (`<=`, `==`, `&&`,
+  `always`, `assign`, ...), source comments, parser metadata (`node_id`,
+  `SyntaxKind`, offsets) or absolute paths. The validator enforces all of
+  these.
+- Uncertainty is never upgraded and uses a fixed vocabulary:
+  - status markers: `status candidate / ambiguous / unsupported`, `(candidate)`;
+  - origin markers: `[derived]`, `[unknown]`, `(unresolved)`;
+  - unknown values: `an unknown state`, `unknown width`,
+    `States: unresolved`, `priority unknown`.
+
+  A candidate, ambiguous or unsupported FSM is never described as confirmed.
+- Registered outputs follow FSM Analysis v2: they are Moore. `sampled_sources`
+  are stated as what the register samples, never as a Mealy dependency.
+
+**Size budget.** 32 KiB per prompt. When a prompt is larger, records are
+dropped section by section in this order:
+
+1. Submodules
+2. Combinational logic
+3. Registers
+4. FSM transitions and actions
+
+Each truncated section ends with `[truncated: <section> <emitted>/<total> records]`.
+The module, clocks/resets and FSM header sections are mandatory: if they
+alone exceed the budget, generation fails rather than emitting an incomplete
+prompt. The sidecar records `truncated`, `truncated_sections`,
+`original_bytes` and `budget_bytes`.
+
+**Answer-leakage metric (frozen).** Every prompt is measured against its
+completion, the module source file (sha256 verified):
+
+| Version | Definition |
+|---|---|
+| tokenizer `sv-lex-v1` | SystemVerilog lexical tokens (sized/based literals, numbers, identifiers, multi-character operators, single characters) after removing comments and whitespace; the same tokenizer for prompt and completion |
+| metric `leakage-v1` | *overlap*: distinct normalized prompt 4-grams found in the normalized completion, divided by distinct normalized prompt 4-grams. Normalization drops HDL keywords and punctuation and maps canonical identifiers (module, port, signal, parameter, enum member, instance and child-module names, child port names) to `ID`; all-`ID` 4-grams are ignored. *longest run*: the longest matching block of the full token streams (identifiers kept, `,` `;` removed) that contains at least one structural token (operator, bracket, literal, keyword or non-canonical identifier). A raw 4-gram overlap is kept as a diagnostic only. |
+| thresholds `thresholds-v1` | overlap ≤ 0.20 and longest run ≤ 6 tokens |
+
+Names alone are never leakage. Metric values are stored in the sidecar. A
+failure fails closed, and prompts are never rewritten to pass. Changing the
+metric after KF-DQ-012 needs a new versioned contract.
+
+**Sidecar and identity.** The sidecar (schema `kritva-forge-prompt` version 2,
+generator 1, identity 1; canonical JSON) records:
+
+- the versions of every layer and of the leakage contract;
+- module identity and variant;
+- the four inputs (path, sha256, schema, identity) and the source (path, sha256);
+- prompt path, sha256, bytes and section list, plus truncation data;
+- guard fallbacks, uncertainty counts, FSM statistics and leakage metrics;
+- `identity` = `pv2:` + the first 16 hex digits of the sha256 of the sidecar
+  without `identity`.
+
+Output is byte-identical across runs, hosts and checkout locations.
+
+**Cross-split classification `rtl-sim-v1`.**
+`scripts/prompt_v2/classify.py` recomputes groups from the persisted
+documents, never from reports:
+
+- *Groups*: modules sharing a Structural Analysis fingerprint or an FSM
+  per-FSM fingerprint whose members span more than one split. Groups with
+  the same members are merged; the id is `grp1:` + sha256(sorted module ids).
+- *Score*: comment-stripped source tokens are alpha-renamed (`v0, v1, ...`,
+  so renaming cannot hide a copy). The score is
+  `difflib.SequenceMatcher(autojunk=False).ratio()`, maximised over member
+  pairs in different splits.
+- *Classes*:
+
+  | Class | Score | Effect |
+  |---|---|---|
+  | `near_duplicate` | ≥ 0.70 | must be re-split before KF-DQ-013 consumes Prompt v2 (`kf_dq_013_entry` = blocked; `unresolved_near_duplicates` lists the groups) |
+  | `structural_similarity` | 0.30 – 0.70 | soft finding, reviewed by KF-DQ-013 |
+  | `informational` | < 0.30 | does not block |
+
+- **KF-DQ-012 changes no split** (`splits_changed: false`). Prompt content
+  and dataset task labels are not used for classification.
+- Output: `analysis/reports/prompt_leakage_classification.json`. It is STALE
+  when the split manifest or fingerprints change.
+
+**Compatibility contract.** `scripts/core/compat.py` holds `REQUIRED`, the
+single declaration of the versions this forge revision needs:
+
+- manifest 6;
+- Semantic IR 2/1, Behavioral Semantics 1/1, Structural Analysis 1/1/1,
+  FSM Analysis 2/1/2, Prompt 2/1/1;
+- tokenizer, metric, thresholds and classifier versions.
+
+Each layer's own constants must equal `REQUIRED` (tested).
+
+`make check-compat` compares `REQUIRED` with the data manifest (schema
+version, `versions` block, recorded `compatibility.required`) and with every
+sidecar's `versions`. It writes `analysis/reports/compatibility_report.json`.
+Compatibility is decided by versions, never by commit hashes.
+
+**Gates and reports.**
+
+- The pipeline runs Prompt v2 after the FSM gate and before datasets
+  (`write_prompt_v2`, `prompt_v2_gate`).
+- After the split, the gate re-runs with classification and writes:
+  - `analysis/reports/prompt_v2_report.json`: sizes, truncation, leakage
+    distribution, uncertainty, FSM and provenance coverage;
+  - the classification report.
+- After the manifest, `compat_gate` checks compatibility. It also requires the
+  corpus, compatibility, stale and classification reports.
+- `KRITVA_FORGE_ALLOW_STALE` bypasses none of these gates.
+- Stale integration:
+  - a prompt or sidecar that differs from a regeneration is STALE;
+  - a prompt without its sidecar is STALE;
+  - a sidecar without its prompt, or a pair for a non-canonical module, is
+    ORPHAN;
+  - any other file under `generated/prompt/` is UNMANAGED.
+- `make check-prompt-v2` runs the validator (with classification and reports).
+  `make data-quality` includes `check-prompt-v2` and `check-compat`.
+
+**Boundaries.** No RTL parsing, no new analysis, no modification of upstream
+layers, Prompt v1, dataset records or splits, no LLM call, and no dataset
+consumption of Prompt v2 (KF-DQ-013).
+
 ---
 
 # 6. Semantic Analysis
@@ -1522,7 +1690,7 @@ All actions are validated before any is executed, and one unsafe entry aborts th
 
 `manifests/data_manifest.json` is the single authoritative inventory of the
 data repository (`scripts/core/data_manifest.py`, schema
-`kritva-forge-data-manifest` version 5: version 2 (KF-DQ-008) added the
+`kritva-forge-data-manifest` version 6: version 2 (KF-DQ-008) added the
 Semantic IR v2 references, see §5.2; version 3 (KF-DQ-009) added the
 Behavioral Semantics v1 references, see §5.3; version 4 (KF-DQ-010) added the
 Structural Analysis v1 references and record structural traceability, see §5.4;
@@ -1530,7 +1698,13 @@ version 5 (KF-DQ-011) added the FSM Analysis references, see §5.5:
 `modules[].fsm`, `records[].fsm`, `versions.fsm` / `fsm_identity` /
 `fsm_analyzer` and the artifact kinds `fsm` / `fsm_report`. Since KF-DQ-011.1
 these reference FSM Analysis v2 (`normalized/fsm/v2`, schema 2, analyzer 2)
-without a manifest schema change). It is written as JSON because every
+without a manifest schema change; version 6 (KF-DQ-012) added the Prompt v2
+references, see §5.6: `modules[].prompt_v2` (prompt and sidecar path / sha256,
+identity, variant, `derived_from` the four layers), the prompt, tokenizer,
+leakage-metric, threshold and classifier versions, `compatibility` (the forge
+version contract), `leakage_classification` (group counts and unresolved
+near-duplicates) and the artifact kinds `prompt_v2` / `prompt_v2_sidecar` /
+`prompt_v2_report` / `prompt_leakage_classification`). It is written as JSON because every
 other machine manifest in the repository is JSON, the standard library
 serialises it byte-deterministically (`sort_keys`), and it parses much faster
 than YAML at about 0.8 MB.

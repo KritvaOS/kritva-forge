@@ -1,0 +1,161 @@
+{
+  "abstraction": {
+    "guard_fallbacks": 0,
+    "rendering": "dependency relationships and natural-language conditions; no HDL expressions"
+  },
+  "fsm": {
+    "actions_rendered": 0,
+    "ambiguous": 0,
+    "candidate": 0,
+    "confirmed": 1,
+    "couplings": 0,
+    "fsms": 1,
+    "quality": {
+      "ambiguous": 0,
+      "high": 1,
+      "low": 0,
+      "medium": 0,
+      "unsupported": 0
+    },
+    "section_truncated": false,
+    "states": 3,
+    "transitions": 9,
+    "transitions_rendered": 7,
+    "unknowns": 0,
+    "unsupported": 0
+  },
+  "generator": {
+    "name": "kritva-forge scripts/prompt_v2 v1",
+    "version": 1
+  },
+  "identity": "pv2:bf4f5165e108250d",
+  "inputs": {
+    "behavior": {
+      "identity_version": 1,
+      "path": "normalized/behavior/v1/fx/g25.json",
+      "schema_version": 1,
+      "sha256": "5753716e4175c59a725ae1c816120fdec3983bbf7f8e1b002154b9f6fd185040"
+    },
+    "fsm": {
+      "identity_version": 1,
+      "path": "normalized/fsm/v2/fx/g25.json",
+      "schema_version": 2,
+      "sha256": "5f6d8741704c303cf12924c4accacf69d453cbee6157d1ea315b3dd041127ccb"
+    },
+    "semantic_ir": {
+      "identity_version": 1,
+      "path": "normalized/semantic_ir/v2/fx/g25.json",
+      "schema_version": 2,
+      "sha256": "d34b157e26258daad76b2af2affe4e75a7f991bd37739f36127d3a378b3b1264"
+    },
+    "structural": {
+      "identity_version": 1,
+      "path": "normalized/structural/v1/fx/g25.json",
+      "schema_version": 1,
+      "sha256": "23ec57b4c549cc253c1bb121ba9d7f3247125b90aad3888932708a2a6c30d160"
+    }
+  },
+  "leakage": {
+    "completion_tokens": 100,
+    "longest_run": 2,
+    "longest_run_tokens": "1 :",
+    "metric_version": "leakage-v1",
+    "overlap": 0.0,
+    "overlapping_ngrams": 0,
+    "prompt_ngrams": 138,
+    "prompt_tokens": 320,
+    "raw_overlap": 0.0,
+    "status": "PASS",
+    "threshold_version": "thresholds-v1",
+    "thresholds": {
+      "longest_run_max": 6,
+      "overlap_max": 0.2
+    },
+    "tokenizer_version": "sv-lex-v1"
+  },
+  "module": {
+    "ip": "fx",
+    "module_id": "mod1:81b5db21da8cce1d",
+    "name": "g25"
+  },
+  "prompt": {
+    "budget_bytes": 32768,
+    "bytes": 1214,
+    "omitted_sections": [
+      "Combinational logic",
+      "Submodules"
+    ],
+    "original_bytes": 1214,
+    "path": "generated/prompt/v2/fx/g25.behavior_aware.txt",
+    "sections": [
+      {
+        "emitted": null,
+        "name": "Module",
+        "records": null,
+        "truncated": false
+      },
+      {
+        "emitted": null,
+        "name": "Clocks and resets",
+        "records": null,
+        "truncated": false
+      },
+      {
+        "emitted": 1,
+        "name": "Registers",
+        "records": 1,
+        "truncated": false
+      },
+      {
+        "emitted": 7,
+        "name": "State machines",
+        "records": 7,
+        "truncated": false
+      }
+    ],
+    "sha256": "91248e485d816e14fdda0375b84cf7dfaba68f4ca1b25b1831987ac069f4dac5",
+    "truncated": false,
+    "truncated_sections": []
+  },
+  "schema": {
+    "name": "kritva-forge-prompt",
+    "version": 2
+  },
+  "source": {
+    "path": "raw/rtl/original/fx/fx.sv",
+    "sha256": "aff025b0b75198f3875b30b0e659eb980745e39ca1375f9775fdec8c46d876e8"
+  },
+  "uncertainty": {
+    "by_category": {
+      "ambiguous": 0,
+      "candidate": 0,
+      "derived": 3,
+      "unknown": 4,
+      "unresolved": 0,
+      "unsupported": 0
+    },
+    "markers": {
+      "[derived]": 3,
+      "priority unknown": 4
+    }
+  },
+  "variant": "behavior_aware",
+  "versions": {
+    "behavior": 1,
+    "behavior_identity": 1,
+    "fsm": 2,
+    "fsm_analyzer": 2,
+    "fsm_identity": 1,
+    "leakage_metric": "leakage-v1",
+    "leakage_thresholds": "thresholds-v1",
+    "prompt": 2,
+    "prompt_generator": 1,
+    "prompt_identity": 1,
+    "semantic_identity": 1,
+    "semantic_ir": 2,
+    "structural": 1,
+    "structural_analyzer": 1,
+    "structural_identity": 1,
+    "tokenizer": "sv-lex-v1"
+  }
+}

@@ -82,6 +82,10 @@ STRUCTURAL_REPORT_PATH = "analysis/reports/structural_report.json"  # KF-DQ-010 
 FSM_DIR = "normalized/fsm/v2"                                       # KF-DQ-011 / KF-DQ-011.1 FSM Analysis
 FSM_OBSOLETE_DIRS = ("normalized/fsm/v1",)                          # superseded by v2 (KF-DQ-011.1)
 FSM_REPORT_PATH = "analysis/reports/fsm_report.json"                # KF-DQ-011 FSM gate
+PROMPT_V2_DIR = "generated/prompt/v2"                               # KF-DQ-012 Prompt v2
+PROMPT_V2_REPORT_PATH = "analysis/reports/prompt_v2_report.json"    # KF-DQ-012 Prompt v2 gate
+CLASSIFICATION_REPORT_PATH = "analysis/reports/prompt_leakage_classification.json"   # KF-DQ-012 rtl-sim-v1
+COMPAT_REPORT_PATH = "analysis/reports/compatibility_report.json"    # KF-DQ-012 cross-repo compatibility
 # Gate outputs: listed whether or not they exist yet (their hashes are not
 # recorded), so the inventory never depends on itself; each is verified by
 # its own validator.
@@ -90,6 +94,7 @@ SELF_OUTPUTS = {
     REPORT_PATH: "stale_artifact_report",
     DATA_MANIFEST_PATH: "data_manifest",
     DATA_MANIFEST_REPORT_PATH: "data_manifest_report",
+    COMPAT_REPORT_PATH: "compatibility_report",       # KF-DQ-012: written after the manifest gate
 }
 QUARANTINE_ROOT = "generated/legacy/quarantine"
 OVERRIDE_ENV = "KRITVA_FORGE_ALLOW_STALE"
@@ -126,7 +131,9 @@ PIPELINE_OUTPUT_KINDS = frozenset({
     "provenance_manifest", "provenance_report", "split_leakage_report", "pipeline_stats",
     "artifact_inventory", "stale_artifact_report", "data_manifest", "data_manifest_report",
     "semantic_ir_report", "behavior_report", "structural_report", "fsm_report",
+    "prompt_v2", "prompt_v2_sidecar", "prompt_v2_report", "prompt_leakage_classification",   # KF-DQ-012
 })
+_PROMPT_V2_RE = re.compile(r"^generated/prompt/v2/([^/]+)/([^/]+)\.([A-Za-z0-9_]+)\.(txt|json)$")
 _PROMPT_RE = re.compile(r"^generated/prompts/([^/]+)/([^/]+)\.generate\.txt$")
 
 
@@ -253,6 +260,8 @@ class Context:
             exp[f"{BEHAVIOR_DIR}/{ip}/{mod}.json"] = ("behavior", ip, mod)             # KF-DQ-009
             exp[f"{STRUCTURAL_DIR}/{ip}/{mod}.json"] = ("structural", ip, mod)         # KF-DQ-010
             exp[f"{FSM_DIR}/{ip}/{mod}.json"] = ("fsm", ip, mod)                       # KF-DQ-011
+            exp[f"{PROMPT_V2_DIR}/{ip}/{mod}.behavior_aware.txt"] = ("prompt_v2", ip, mod)            # KF-DQ-012
+            exp[f"{PROMPT_V2_DIR}/{ip}/{mod}.behavior_aware.json"] = ("prompt_v2_sidecar", ip, mod)
         for ip in self.ips:
             exp[f"normalized/ir/{ip}/hierarchy.yaml"] = ("ip_metadata", ip, None)
             exp[f"normalized/ir/{ip}/summary.yaml"] = ("ip_metadata", ip, None)
@@ -267,6 +276,8 @@ class Context:
             BEHAVIOR_REPORT_PATH: "behavior_report",
             STRUCTURAL_REPORT_PATH: "structural_report",
             FSM_REPORT_PATH: "fsm_report",
+            PROMPT_V2_REPORT_PATH: "prompt_v2_report",                  # KF-DQ-012
+            CLASSIFICATION_REPORT_PATH: "prompt_leakage_classification",
             REPORT_PATH: "stale_artifact_report",
             "splits/split_manifest.json": "split_manifest",
             "manifests/provenance_manifest.json": "provenance_manifest",
@@ -384,6 +395,7 @@ def classify(data_root, use_recorded: bool = True) -> dict:
         split_ids[name] = {(r.get("provenance") or {}).get("record_id") for r in (records or [])}
 
     prompts_per_module = Counter()
+    v2_cache = {}
 
     def add(rel, kind, state, reason=None, ip=None, module=None, symlink=False):
         mod_entry = ctx.modules.get((ip, module)) if module else None
@@ -534,6 +546,21 @@ def classify(data_root, use_recorded: bool = True) -> dict:
                     add(rel, "prompt", "UNMANAGED", "not a <module>.generate.txt prompt")
             continue
 
+        if rel.startswith("generated/prompt/"):                       # KF-DQ-012 Prompt v2
+            match = _PROMPT_V2_RE.match(rel)
+            if kind in ("prompt_v2", "prompt_v2_sidecar"):
+                state, reason = _prompt_v2_state(ctx, root, rel, kind, ip, mod, counters, v2_cache)
+                add(rel, kind, state, reason, ip, mod)
+            elif match and match.group(3) != "behavior_aware":
+                add(rel, "prompt_v2_other", "UNMANAGED", f"unsupported Prompt v2 variant {match.group(3)!r}")
+            elif match:
+                add(rel, "prompt_v2" if match.group(4) == "txt" else "prompt_v2_sidecar", "ORPHAN",
+                    f"module {match.group(1)}/{match.group(2)} is not canonical", match.group(1))
+            else:
+                add(rel, "prompt_v2_other", "UNMANAGED",
+                    f"not part of the Prompt v2 layout ({PROMPT_V2_DIR}/<ip>/<module>.<variant>.txt|json)")
+            continue
+
         if rel.startswith("generated/rtl/"):
             sha = _sha(path)
             raw = ctx.raw_by_sha.get(sha)
@@ -626,6 +653,12 @@ def classify(data_root, use_recorded: bool = True) -> dict:
             add(rel, kind, state, reason)
         elif kind == "fsm_report":
             state, reason = _fsm_report_state(root, path)
+            add(rel, kind, state, reason)
+        elif kind == "prompt_v2_report":
+            state, reason = _prompt_v2_report_state(root, path)
+            add(rel, kind, state, reason)
+        elif kind == "prompt_leakage_classification":
+            state, reason = _classification_state(root, path)
             add(rel, kind, state, reason)
         elif kind == "pipeline_stats":
             data = _load_json(path)
@@ -895,6 +928,71 @@ def _fsm_state(ctx, root: Path, path: Path, ip, mod, counters) -> tuple[str, str
     return "CURRENT", None
 
 
+def _prompt_v2_state(ctx, root: Path, rel, kind, ip, mod, counters, cache) -> tuple[str, str | None]:
+    """KF-DQ-012 (AC-580 .. AC-615): a Prompt v2 text or sidecar is CURRENT only if its pair exists, it was
+    derived from the current Semantic IR, Behavioral Semantics, Structural Analysis and FSM Analysis
+    documents, regeneration is byte-identical and the pair validates."""
+    from scripts.prompt_v2 import model as PM
+    from scripts.prompt_v2 import render as PR
+    from scripts.prompt_v2.validator import validate_module
+
+    if not ctx.module_ok(ip, mod):
+        counters["invalid_source_identities"] += 1
+        return "ORPHAN", f"source of {ip}/{mod} missing"
+    prel, srel = PM.prompt_rel(ip, mod), PM.sidecar_rel(ip, mod)
+    if kind == "prompt_v2_sidecar" and not (root / prel).is_file():
+        return "ORPHAN", f"sidecar without its prompt {prel}"
+    if kind == "prompt_v2" and not (root / srel).is_file():
+        return "STALE", f"prompt without its sidecar {srel}"
+    if (ip, mod) not in cache:
+        try:
+            inputs = PR.load_inputs(root, ip, mod)
+        except PR.PromptError as exc:
+            counters["invalid_prompt_v2"] += 1
+            cache[(ip, mod)] = ("STALE", f"Prompt v2 input unavailable: {exc}"[:300])
+        else:
+            problems = validate_module((root / prel).read_text(encoding="utf-8", errors="replace"),
+                                       (root / srel).read_text(encoding="utf-8", errors="replace"), inputs)
+            if problems:
+                counters["invalid_prompt_v2"] += 1
+                code, msg = problems[0]
+                cache[(ip, mod)] = ("STALE", f"[{code}] {msg}"[:300])
+            else:
+                cache[(ip, mod)] = ("CURRENT", None)
+    return cache[(ip, mod)]
+
+
+def _prompt_v2_report_state(root: Path, path: Path) -> tuple[str, str | None]:
+    from scripts.prompt_v2 import model as PM
+    from scripts.prompt_v2.validator import corpus_sha256
+
+    rep = _load_json(path)
+    if not isinstance(rep, dict) or rep.get("schema") != {"name": PM.SCHEMA_NAME + "-report", "version": 1}:
+        return "STALE", "missing or obsolete Prompt v2 report schema"
+    if rep.get("status") != "PASS":
+        return "STALE", "Prompt v2 gate did not pass"
+    if rep.get("corpus_sha256") != corpus_sha256(root):
+        return "STALE", "Prompt v2 corpus changed since this report was written"
+    return "CURRENT", None
+
+
+def _classification_state(root: Path, path: Path) -> tuple[str, str | None]:
+    from scripts.prompt_v2 import classify as PC
+
+    rep = _load_json(path)
+    if not isinstance(rep, dict):
+        return "STALE", "unreadable classification report"
+    if PC.validate(rep):
+        return "STALE", "obsolete or inconsistent classification report"
+    try:
+        fresh = PC.build(root)
+    except PC.ClassificationError as exc:
+        return "STALE", f"classification inputs unavailable: {exc}"[:300]
+    if PC.dumps(fresh) != PC.dumps(rep):
+        return "STALE", "split manifest or fingerprints changed since the classification was written"
+    return "CURRENT", None
+
+
 def _fsm_report_state(root: Path, path: Path) -> tuple[str, str | None]:
     import hashlib
 
@@ -983,6 +1081,7 @@ def build_report(result: dict, inventory_status: str | None, override: bool = Fa
         "invalid_behavior": c["invalid_behavior"],
         "invalid_structural": c["invalid_structural"],
         "invalid_fsm": c["invalid_fsm"],
+        "invalid_prompt_v2": c["invalid_prompt_v2"],
         "obsolete_schema": c["obsolete_schema"],
         "absolute_paths": c["absolute_paths"],
         "symlinks": c["symlinks"],
@@ -1006,7 +1105,8 @@ def check(data_root, scope: str = "all") -> dict:
     if scope == "inputs":
         result["entries"] = [e for e in result["entries"] if e["kind"] not in PIPELINE_OUTPUT_KINDS]
         result["missing"] = [p for p in result["missing"]
-                             if not p.startswith(("datasets/", "splits/", "manifests/", "analysis/"))]
+                             if not p.startswith(("datasets/", "splits/", "manifests/", "analysis/",
+                                                  PROMPT_V2_DIR + "/"))]
         return build_report(result, None)
     inventory = build_inventory(result)
     stored = root / INVENTORY_PATH
@@ -1041,7 +1141,7 @@ def format_report(report: dict) -> str:
     rows = ["artifact_records_checked", "expected_artifacts", "current", "stale", "orphan", "historical",
             "unmanaged", "missing_expected", "duplicate_artifacts", "invalid_provenance",
             "invalid_source_identities", "invalid_module_identities", "missing_ir_references", "invalid_semantic_ir", "invalid_behavior",
-            "invalid_structural", "invalid_fsm", "obsolete_schema", "absolute_paths", "symlinks", "dataset_records_checked",
+            "invalid_structural", "invalid_fsm", "invalid_prompt_v2", "obsolete_schema", "absolute_paths", "symlinks", "dataset_records_checked",
             "split_records_checked", "cleanup_candidates", "remediation_counts", "inventory_status"]
     lines = [f"Stale artifact check: {report['status']}" + (" (override)" if report.get("override") else "")]
     lines += [f"  {k.replace('_', ' '):26s}: {report.get(k)}" for k in rows if k in report]

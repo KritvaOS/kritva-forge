@@ -1,0 +1,27 @@
+Write synthesizable Verilog/SystemVerilog RTL for the hardware module specified below. The specification describes behavior and structure, not source code.
+
+## Module
+Name: g21
+Ports:
+- clk: input, 1 bit
+- rst_n: input, 1 bit
+- req: input, 1 bit
+- ack: output, 1 bit
+
+## Clocks and resets
+- clock clk, rising edge
+- reset rst_n: async, active low
+
+## Registers
+- ack (1 bit); updated on the rising edge of clk; reset by rst_n to 0; controlled by req; otherwise holds its value (implicit hold)
+
+## State machines
+FSM 1: state register ack (1 bit); status candidate; quality low; one-process; encoding binary
+Timing: clock clk, rising edge; reset rst_n (async) to value 0; enabled by req; implicit hold
+States: value 0 (reset), value 1
+Reachability from the reset state: known (transition graph only)
+Output ack: moore, registered; updated at the clock edge from req
+Transitions:
+- value 1 -> value 0
+- value 0 -> value 1 when req is 1 [derived]
+- value 0 -> value 0 when req is 0 (holds) [derived] (priority unknown)

@@ -1,0 +1,34 @@
+Write synthesizable Verilog/SystemVerilog RTL for the hardware module specified below. The specification describes behavior and structure, not source code.
+
+## Module
+Name: g09
+Ports:
+- clk: input, 1 bit
+- rst_n: input, 1 bit
+- go: input, 1 bit
+- stop: input, 1 bit
+- run: output, 1 bit
+
+## Clocks and resets
+- clock clk, rising edge
+- reset rst_n: async, active low
+
+## Registers
+- cs (1 bit); updated on the rising edge of clk; reset by rst_n to OFF; next value depends on ns
+
+## Combinational logic
+- ns depends on cs; selected by cs, go, stop
+- run (continuous) depends on ON, cs
+
+## State machines
+FSM 1: state register cs (unknown width); status confirmed; quality high; two-process; encoding binary
+Timing: clock clk, rising edge; reset rst_n (async) to OFF; implicit hold
+States: OFF = 0 (implicit value) (reset), ARM = 1 (implicit value), ON = 2 (implicit value)
+Reachability from the reset state: known (transition graph only)
+Output run: moore
+Transitions:
+- OFF -> OFF (holds) [derived]
+- ON -> ON (holds) [derived]
+- OFF -> ARM when go is 1
+- ARM -> ON
+- ON -> OFF when stop is 1

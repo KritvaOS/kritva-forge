@@ -1,0 +1,29 @@
+Write synthesizable Verilog/SystemVerilog RTL for the hardware module specified below. The specification describes behavior and structure, not source code.
+
+## Module
+Name: g11
+Ports:
+- clk: input, 1 bit
+- rst_n: input, 1 bit
+- a: input, 1 bit
+- st: output, 3 bits
+
+## Clocks and resets
+- clock clk, rising edge
+- reset rst_n: async, active low
+
+## Registers
+- st (3 bits); updated on the rising edge of clk; reset by rst_n to P; controlled by a; otherwise holds its value (implicit hold)
+
+## State machines
+FSM 1: state register st (3 bits); status confirmed; quality medium; one-process; encoding unknown
+Timing: clock clk, rising edge; reset rst_n (async) to P; enabled by a; implicit hold
+States: P = 1 (reset), Q = 2, R = 4
+Reachability from the reset state: unknown
+Output st: moore, registered; updated at the clock edge from a
+Uncertain: incomplete domain, unknown source
+Transitions:
+- an unknown state -> Q when st is an unrendered value and a is 1 [unknown]
+- an unknown state -> R when st is an unrendered value [unknown]
+- an unknown state -> P when st matches no listed value (default) [unknown]
+- an unknown state -> an unknown state when st is an unrendered value and a is 0 (holds) [unknown] (priority unknown)
