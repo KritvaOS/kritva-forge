@@ -4,7 +4,7 @@
 # SPDX-License-Identifier: Apache-2.0
 #
 # File        : analyzer.py
-# Description : Semantic IR v2 + Behavioral Semantics v1 + Structural Analysis v1 to FSM Analysis v1 (KF-DQ-011)
+# Description : Semantic IR v2 + Behavioral Semantics v1 + Structural Analysis v1 to FSM Analysis v2 (KF-DQ-011)
 #
 # Component   : Kritva Forge
 # Module      : fsm
@@ -209,6 +209,40 @@ class _In:
         self.dep = defaultdict(list)
         for d in st["dependencies"]:
             self.dep[(d["source"], d["target"])].append(d)
+
+    def registered(self, sid) -> bool:
+        """KF-DQ-011.1 (AC-017 / AC-018, C1): ``sid`` is a registered signal when Structural Analysis has
+        at least one register record for it and every such record has a sequential boundary (a latch
+        is transparent and therefore not a temporal boundary).  Matched by ``sem1:`` identity only."""
+        recs = [r for r in self.st["registers"] if r["signal"] == sid]
+        return bool(recs) and all(r.get("boundary") == "sequential" for r in recs)
+
+    def sampled_sources(self, sid, exclude) -> list:
+        """KF-DQ-011.1 (AC-109 .. AC-124, I4): module inputs and other registers sampled by the update
+        logic of the registered signal ``sid``.  Data, control and enable dependencies into ``sid`` are
+        followed (clock, reset and hold are excluded; an enable is the condition deciding whether the
+        register updates, E1), then the combinational cone behind each source, stopping at registers.
+        ``sid`` itself and ``exclude`` (the state register and its next-state signal, already
+        ``state_sources``) are omitted."""
+        dirs = {s["signal"]: s.get("direction") for s in self.st["signals"]}
+        regs = {r["signal"] for r in self.st["registers"]}
+        out, seen = set(), {sid}
+        todo = sorted({d["source"] for d in self.st["dependencies"]
+                       if d["target"] == sid and d["kind"] in ("data", "control", "enable")
+                       and d["boundary"] == "sequential"})
+        while todo:
+            s = todo.pop()
+            if s in seen or s in exclude:
+                continue
+            seen.add(s)
+            if s in regs or dirs.get(s) in ("input", "inout"):
+                out.add(s)
+                if s in regs:
+                    continue
+            todo.extend(sorted({d["source"] for d in self.st["dependencies"]
+                                if d["target"] == s and d["boundary"] == "combinational"
+                                and d["kind"] in ("data", "control")}))
+        return sorted(out)
 
     def _walk(self, s, pid):
         if not isinstance(s, dict) or "stmt" not in s:
@@ -798,6 +832,7 @@ class _Analysis:
             if p.get("direction") not in ("output", "inout"):
                 continue
             pid = p["id"]
+            registered = x.registered(pid)
             if pid == R:
                 kindo, ss, oth = "moore", [R], []
             else:
@@ -805,13 +840,21 @@ class _Analysis:
                 members = set(cone["signals"]) | set(cone["registers"])
                 if R not in members and N not in members:
                     continue
-                oth_regs = sorted(set(cone["registers"]) - {R})
-                ins = sorted(cone["inputs"])
                 ss = [R]
-                oth = sorted(set(ins) | set(oth_regs))
-                kindo = "mealy" if ins else ("moore" if not oth_regs else "ambiguous")
+                if registered:
+                    # KF-DQ-011.1: a registered output is a temporal boundary.  Its combinational
+                    # output cone ends at the register itself, so the update logic behind it
+                    # (sampled inputs, clock, reset, enable, hold) never makes it Mealy.
+                    kindo, oth = "moore", []
+                else:
+                    oth_regs = sorted(set(cone["registers"]) - {R})
+                    ins = sorted(cone["inputs"])
+                    oth = sorted(set(ins) | set(oth_regs))
+                    kindo = "mealy" if ins else ("moore" if not oth_regs else "ambiguous")
+            sampled = x.sampled_sources(pid, {R, N}) if registered else []
             outputs.append({"id": F.fsm_id("output", fid, pid), "signal": pid, "name": p["name"], "kind": kindo,
-                            "state_sources": ss, "other_sources": oth, "loc": p["loc"]})
+                            "registered": registered, "state_sources": ss, "sampled_sources": sampled,
+                            "other_sources": oth, "loc": p["loc"]})
         # ---- actions: other targets assigned under predicates over R
         actions = {}
         for a in x.sem["assignments"]:
@@ -1058,7 +1101,7 @@ def build(data_root, ip, module) -> dict:
 
 
 def write_all(data_root) -> dict:
-    """Write FSM Analysis v1 for every canonical module (fail closed)."""
+    """Write FSM Analysis v2 for every canonical module (fail closed)."""
     from scripts.core.paths import find_absolute_paths
 
     root = Path(os.path.abspath(data_root))
@@ -1077,9 +1120,9 @@ def write_all(data_root) -> dict:
 
 
 def main(argv=None) -> int:
-    parser = argparse.ArgumentParser(description="KF-DQ-011 FSM Analysis v1 analyzer")
+    parser = argparse.ArgumentParser(description="KF-DQ-011 FSM Analysis v2 analyzer")
     parser.add_argument("--data-root", default=os.environ.get("KRITVA_FORGE_DATA_ROOT"))
-    parser.add_argument("--write", action="store_true", help="(re)generate normalized/fsm/v1")
+    parser.add_argument("--write", action="store_true", help="(re)generate normalized/fsm/v2")
     args = parser.parse_args(argv)
     if not args.data_root:
         from scripts.core.paths import default_data_root
@@ -1091,7 +1134,7 @@ def main(argv=None) -> int:
     except AnalysisError as exc:
         print(f"[STOP] FSM analysis refused: {exc}")
         return 1
-    print(f"[INFO] wrote {res['documents']} FSM Analysis v1 documents to {F.OUTPUT_DIR}")
+    print(f"[INFO] wrote {res['documents']} FSM Analysis v2 documents to {F.OUTPUT_DIR}")
     return 0
 
 

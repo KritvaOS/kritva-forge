@@ -3,7 +3,7 @@
 # SPDX-License-Identifier: Apache-2.0
 #
 # File        : test_fsm_validator.py
-# Description : FSM Analysis v1 validator negative tests (KF-DQ-011)
+# Description : FSM Analysis v2 validator negative tests (KF-DQ-011)
 #
 # Component   : Kritva Forge
 # Module      : tests/fsm
@@ -12,7 +12,7 @@
 # Author      : Kritva Forge Team
 # Created     : 02-10-2026
 # =============================================================================
-"""FSM Analysis v1 validator - negative tests (acceptance criteria section 21).
+"""FSM Analysis v2 validator - negative tests (acceptance criteria section 21).
 
 A valid reference document (two coupled FSMs, outputs and actions) and its
 three upstream inputs are built once; each test corrupts a deep copy - or a
@@ -118,7 +118,10 @@ def test_160_missing_schema(ref):
 
 def test_161_unsupported_schema_version(ref):
     doc, inputs = ref
-    doc["schema"]["version"] = 2
+    doc["schema"]["version"] = 1                                    # FSM Analysis v1 is obsolete (KF-DQ-011.1)
+    fails(doc, inputs, "schema")
+    doc, inputs = copy.deepcopy(ref)
+    doc["schema"]["version"] = 3
     fails(doc, inputs, "schema")
 
 
@@ -436,6 +439,6 @@ def test_corpus_check_passes_and_reports(corpus):
     assert rep["documents"] == rep["canonical_modules"] == 1 and rep["totals"]["fsms"] == 2
     assert rep["provenance"]["valid"] == rep["provenance"]["objects"] > 0
     assert rep["leakage"]["status"] == "SKIPPED"                    # no split manifest in a scratch repository
-    assert "FSM Analysis v1 check: PASS" in V.format_report(rep)
+    assert "FSM Analysis check: PASS" in V.format_report(rep)
     path = V.write_report(corpus, rep)
     assert json.loads(path.read_text())["corpus_sha256"] == V.corpus_sha256(corpus)

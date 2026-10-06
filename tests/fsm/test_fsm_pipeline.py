@@ -3,7 +3,7 @@
 # SPDX-License-Identifier: Apache-2.0
 #
 # File        : test_fsm_pipeline.py
-# Description : FSM Analysis v1 pipeline, stale, manifest v5 and leakage integration tests (KF-DQ-011)
+# Description : FSM Analysis v2 pipeline, stale, manifest v5 and leakage integration tests (KF-DQ-011)
 #
 # Component   : Kritva Forge
 # Module      : tests/fsm
@@ -12,10 +12,10 @@
 # Author      : Kritva Forge Team
 # Created     : 02-10-2026
 # =============================================================================
-"""FSM Analysis v1 in the pipeline (criteria sections 22 - 25, 27, 28).
+"""FSM Analysis v2 in the pipeline (criteria sections 22 - 25, 27, 28).
 
 * every canonical module gets a document (zero-FSM modules included);
-* A/B and relocation: byte-identical ``normalized/fsm/v1`` trees and report;
+* A/B and relocation: byte-identical ``normalized/fsm/v2`` trees and report;
 * Semantic IR, Behavioral Semantics, Structural Analysis, IR v1 and raw RTL
   are not modified;
 * stale gate: tampered, obsolete, out-of-date (any of the three inputs),
@@ -172,6 +172,27 @@ def test_stray_and_missing_fsm_files(tree):
     assert S.check(tree)["status"] == "FAIL"
 
 
+def test_obsolete_v1_tree_is_stale(tree):
+    """KF-DQ-011.1 I1: FSM v2 is the only canonical tree; a leftover v1 document fails both gates."""
+    src = tree / F.OUTPUT_DIR / "ipf" / "ipf_f0.json"
+    old = tree / "normalized" / "fsm" / "v1" / "ipf" / "ipf_f0.json"
+    old.parent.mkdir(parents=True)
+    old.write_bytes(src.read_bytes())
+    e = _state(tree, "normalized/fsm/v1/ipf/ipf_f0.json")
+    assert e["state"] == "STALE" and "obsolete FSM Analysis v1" in e["reason"]
+    assert S.check(tree)["status"] == "FAIL"
+    rep = V.check(tree)
+    assert rep["status"] == "FAIL" and any("obsolete FSM Analysis layout" in p for p in rep["problems"])
+
+
+def test_pipeline_publishes_only_v2(built):
+    assert not (built.root / "normalized" / "fsm" / "v1").exists()
+    docs = [json.loads(p.read_text()) for p in (built.root / F.OUTPUT_DIR).rglob("*.json")]
+    assert docs and all(d["schema"] == {"name": F.SCHEMA_NAME, "version": 2} for d in docs)
+    outs = [o for d in docs for f in d["fsms"] for o in f["outputs"]]
+    assert outs and all(isinstance(o["registered"], bool) and isinstance(o["sampled_sources"], list) for o in outs)
+
+
 def test_stale_fsm_blocks_publication(tree, monkeypatch):
     """A stray FSM document fails the FSM gate even with the stale override (AC-249)."""
     (tree / F.OUTPUT_DIR / "ipa" / "not_a_module.json").write_text("{}\n")
@@ -190,13 +211,13 @@ def test_split_change_makes_report_stale(tree):
 def test_manifest_v5_references_fsm(built):
     m = json.loads((built.root / DM.MANIFEST_PATH).read_text())
     assert m["schema"] == {"name": "kritva-forge-data-manifest", "version": 5}
-    assert (m["versions"]["fsm"], m["versions"]["fsm_identity"], m["versions"]["fsm_analyzer"]) == (1, 1, 1)
+    assert (m["versions"]["fsm"], m["versions"]["fsm_identity"], m["versions"]["fsm_analyzer"]) == (2, 1, 2)
     arts = {a["path"]: a for a in m["artifacts"]}
     for mod in m["modules"]:
         f = mod["fsm"]
         doc = json.loads((built.root / f["path"]).read_text())
         assert f["path"] == f"{F.OUTPUT_DIR}/{mod['ip']}/{mod['module']}.json" and f["fsm_id"] == doc["id"]
-        assert (f["schema_version"], f["identity_version"], f["analyzer_version"], f["provenance_version"]) == (1, 1, 1, 1)
+        assert (f["schema_version"], f["identity_version"], f["analyzer_version"], f["provenance_version"]) == (2, 1, 2, 1)
         assert (f["status"], f["module_id"]) == ("canonical", mod["module_id"])
         assert f["derived_from"] == {
             "semantic_ir": mod["semantic_ir"]["path"], "semantic_ir_sha256": mod["semantic_ir"]["sha256"],

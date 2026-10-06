@@ -425,7 +425,7 @@ def structural_gate(data_root, final=False):
 
 
 def write_fsm(data_root):
-    """Derive FSM Analysis v1 from Semantic IR v2 + Behavioral Semantics v1 + Structural Analysis v1 (KF-DQ-011).
+    """Derive FSM Analysis v2 from Semantic IR v2 + Behavioral Semantics v1 + Structural Analysis v1 (KF-DQ-011).
 
     Runs right after structural analysis and before the pre-dataset stale
     gate (which classifies the FSM documents).  Fails closed on missing or
@@ -437,12 +437,12 @@ def write_fsm(data_root):
         res = A.write_all(data_root)
     except A.AnalysisError as exc:
         raise RuntimeError(f"FSM analysis refused (KF-DQ-011): {exc}") from exc
-    print(f"[INFO] FSM Analysis v1: {res['documents']} documents")
+    print(f"[INFO] FSM Analysis v2: {res['documents']} documents")
     return res
 
 
 def fsm_gate(data_root, final=False):
-    """Validate every FSM Analysis v1 document (KF-DQ-011; no override).
+    """Validate every FSM Analysis v2 document (KF-DQ-011; no override).
 
     Before dataset generation (``final=False``) the documents are validated
     against their inputs; after the split is written (``final=True``) the
@@ -453,11 +453,11 @@ def fsm_gate(data_root, final=False):
     report = V.check(data_root, with_leakage=final)
     if final:
         V.write_report(data_root, report)
-    print("[INFO] FSM Analysis v1 gate" + (" (with split leakage)" if final else ""))
+    print("[INFO] FSM Analysis v2 gate" + (" (with split leakage)" if final else ""))
     print(V.format_report(report))
     if report["status"] != "PASS":
         raise RuntimeError(
-            "FSM Analysis v1 gate failed (KF-DQ-011): " + "; ".join(report["problems"][:5])
+            "FSM Analysis v2 gate failed (KF-DQ-011): " + "; ".join(report["problems"][:5])
         )
     return report
 
@@ -603,7 +603,7 @@ def run_pipeline(
         structural_gate(data_root)
 
         #
-        # KF-DQ-011: FSM Analysis v1 gate (schema, identities, references,
+        # KF-DQ-011: FSM Analysis v2 gate (schema, identities, references,
         # provenance, encoding / reachability consistency, re-analysis).
         #
         fsm_gate(data_root)

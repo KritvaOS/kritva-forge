@@ -79,7 +79,8 @@ BEHAVIOR_DIR = "normalized/behavior/v1"                             # KF-DQ-009 
 BEHAVIOR_REPORT_PATH = "analysis/reports/behavior_report.json"      # KF-DQ-009 behavior gate
 STRUCTURAL_DIR = "normalized/structural/v1"                         # KF-DQ-010 Structural Analysis
 STRUCTURAL_REPORT_PATH = "analysis/reports/structural_report.json"  # KF-DQ-010 structural gate
-FSM_DIR = "normalized/fsm/v1"                                       # KF-DQ-011 FSM Analysis
+FSM_DIR = "normalized/fsm/v2"                                       # KF-DQ-011 / KF-DQ-011.1 FSM Analysis
+FSM_OBSOLETE_DIRS = ("normalized/fsm/v1",)                          # superseded by v2 (KF-DQ-011.1)
 FSM_REPORT_PATH = "analysis/reports/fsm_report.json"                # KF-DQ-011 FSM gate
 # Gate outputs: listed whether or not they exist yet (their hashes are not
 # recorded), so the inventory never depends on itself; each is verified by
@@ -469,7 +470,11 @@ def classify(data_root, use_recorded: bool = True) -> dict:
             else:
                 parts = rel.split("/")
                 if len(parts) >= 2 and parts[1] == "fsm":
-                    if rel.startswith(FSM_DIR + "/") and len(parts) == 5 and parts[4].endswith(".json"):
+                    if any(rel.startswith(d + "/") for d in FSM_OBSOLETE_DIRS):
+                        add(rel, "fsm", "STALE", "obsolete FSM Analysis v1 document (superseded by "
+                            f"{FSM_DIR}, KF-DQ-011.1); remove it", parts[3] if len(parts) > 3 else None)
+                        counters["obsolete_schema"] += 1
+                    elif rel.startswith(FSM_DIR + "/") and len(parts) == 5 and parts[4].endswith(".json"):
                         add(rel, "fsm", "ORPHAN",
                             f"module {parts[3]}/{parts[4][:-5]} has no canonical IR", parts[3])
                     else:
@@ -841,7 +846,7 @@ def _structural_report_state(root: Path, path: Path) -> tuple[str, str | None]:
 
 
 def _fsm_state(ctx, root: Path, path: Path, ip, mod, counters) -> tuple[str, str | None]:
-    """KF-DQ-011: an FSM Analysis v1 document is CURRENT only if it was derived from the current
+    """KF-DQ-011 / KF-DQ-011.1: an FSM Analysis v2 document is CURRENT only if it was derived from the current
     Semantic IR v2, Behavioral Semantics v1 and Structural Analysis v1 documents (sha256), with the
     current schema / analyzer, re-analysis reproduces it byte for byte and it validates."""
     from scripts.fsm import analyzer as FA

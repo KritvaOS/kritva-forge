@@ -4,7 +4,7 @@
 # SPDX-License-Identifier: Apache-2.0
 #
 # File        : validator.py
-# Description : FSM Analysis v1 schema, reference, provenance and consistency validation (KF-DQ-011)
+# Description : FSM Analysis v2 schema, reference, provenance and consistency validation (KF-DQ-011)
 #
 # Component   : Kritva Forge
 # Module      : fsm
@@ -13,14 +13,23 @@
 # Author      : Kritva Forge Team
 # Created     : 02-10-2026
 # =============================================================================
-"""FSM Analysis v1 validation (criteria sections 19, 21, 22, 24, 25) - fail closed.
+"""FSM Analysis v2 validation (KF-DQ-011 sections 19, 21, 22, 24, 25; KF-DQ-011.1) - fail closed.
 
 ``validate_module(doc, sem, sem_rel, sem_sha, beh, beh_rel, beh_sha, st,
 st_rel, st_sha)`` returns ``[(code, message), ...]``; ``check(data_root)``
-validates every document under ``normalized/fsm/v1`` against the canonical
+validates every document under ``normalized/fsm/v2`` against the canonical
 module inventory and the current Semantic IR v2, Behavioral Semantics v1 and
 Structural Analysis v1 (re-analysis must reproduce each document byte for
 byte) and the split manifest (leakage), and is the ``make check-fsm`` gate.
+
+Register boundary (KF-DQ-011.1): ``registered`` is checked against the
+Structural Analysis register records independently of the analyzer's cone
+logic; a registered output must be Moore with ``other_sources == []``, and its
+``sampled_sources`` may hold only module inputs / registers, never the output
+itself, the state register / next-state signal, or the register's clock or
+reset (enable-condition sources are sampled sources, E1).  The validator
+stays corpus-agnostic: corpus counts are asserted by the corpus data test
+(Appendix C2).
 
 Codes:
 
@@ -87,7 +96,8 @@ REQUIRED = {
                "reset", "loc"),
     "transitions": ("id", "source", "target", "kind", "guard", "priority", "assignment", "hold", "process",
                     "status", "rendered", "loc"),
-    "outputs": ("id", "signal", "name", "kind", "state_sources", "other_sources", "loc"),
+    "outputs": ("id", "signal", "name", "kind", "registered", "state_sources", "sampled_sources", "other_sources",
+                "loc"),
     "actions": ("id", "state", "signal", "assignment", "kind", "guard", "loc"),
     "couplings": ("id", "from_fsm", "to_fsm", "kind", "refs"),
     "rejected": ("id", "register", "signal", "name", "reason", "name_hint", "evidence", "loc"),
@@ -362,6 +372,50 @@ def _validate_fsm(f, p, sids, bids, tids, preds, ports, beh_regs):
         p.append(("consistency", f"fsm {fid}: unknown transitions without unknown records"))
 
 
+def _validate_register_boundary(f, o, p, sids, ports, st):
+    """KF-DQ-011.1 (AC-159 .. AC-170): registered-output semantics, derived from the Structural Analysis
+    register records - not from the analyzer's classification rule."""
+    where = f"output {o['id']}"
+    recs = [r for r in st.get("registers", []) if r.get("signal") == o["signal"]]
+    want = bool(recs) and all(r.get("boundary") == "sequential" for r in recs)
+    if not isinstance(o.get("registered"), bool):
+        p.append(("schema", f"{where}: registered is not a boolean"))
+        return
+    if o["registered"] != want:
+        p.append(("structural_consistency", f"{where}: registered={o['registered']} but Structural Analysis "
+                  f"{'has' if want else 'has no'} a sequential register for {o['signal']}"))
+    ss = o.get("sampled_sources")
+    if not isinstance(ss, list) or not all(isinstance(x, str) for x in ss):
+        p.append(("schema", f"{where}: sampled_sources is not a list of identities"))
+        return
+    if ss != sorted(set(ss)):
+        p.append(("ordering", f"{where}: sampled_sources not sorted / unique"))
+    if not o["registered"]:
+        if ss:
+            p.append(("consistency", f"{where}: sampled_sources on a combinational output"))
+        return
+    if o["kind"] != "moore":
+        p.append(("consistency", f"{where}: registered output classified {o['kind']} (a register is a temporal "
+                  "boundary, KF-DQ-011.1)"))
+    if o["other_sources"]:
+        p.append(("consistency", f"{where}: registered output with combinational other_sources"))
+    regs = {r["signal"] for r in st.get("registers", [])}
+    timing = set()
+    for r in recs:
+        timing.add((r.get("clock") or {}).get("signal"))
+        timing.update(x.get("signal") for x in r.get("resets", []))
+    state = {f["register"]["signal"], (f.get("next_signal") or {}).get("signal")}
+    for x in ss:
+        if x not in sids:
+            p.append(("semantic_reference", f"{where}: sampled source {x} not in Semantic IR"))
+        elif x == o["signal"] or x in state:
+            p.append(("consistency", f"{where}: sampled source {x} is the output itself or the FSM state"))
+        elif x in timing:
+            p.append(("consistency", f"{where}: clock / reset {x} recorded as a sampled source"))
+        elif x not in regs and (ports.get(x) or {}).get("direction") not in ("input", "inout"):
+            p.append(("consistency", f"{where}: sampled source {x} is neither a module input nor a register"))
+
+
 def _validate_guard(guard, where, p, sids, preds, states):
     if not isinstance(guard, list):
         p.append(("required", f"{where}: guard path is not a list"))
@@ -522,6 +576,7 @@ def validate_module(doc, sem=None, sem_rel=None, sem_sha=None, beh=None, beh_rel
         for o in f["outputs"]:
             if o["signal"] not in out_ports:
                 p.append(("semantic_reference", f"output {o['id']}: {o['signal']} is not an output port"))
+            _validate_register_boundary(f, o, p, sids, ports, st)
     regs_used = Counter(f["register"]["register"] for f in doc["fsms"]) + Counter(r["register"] for r in doc["rejected"])
     for r, n in regs_used.items():
         if n > 1:
@@ -641,6 +696,10 @@ def check(data_root, with_leakage: bool = True) -> dict:
     others = sorted(p for p in base.rglob("*") if p.is_file() and p.suffix != ".json") if base.is_dir() else []
     for p in others:
         problems.append(("inventory", f"{p.relative_to(root).as_posix()}: not <ip>/<module>.json"))
+    for old in F.OBSOLETE_OUTPUT_DIRS:                          # KF-DQ-011.1: v2 is the only canonical tree
+        if (root / old).exists():
+            problems.append(("inventory", f"{old}: obsolete FSM Analysis layout still present (superseded by "
+                             f"{F.OUTPUT_DIR})"))
     for path in files:
         rel = path.relative_to(root).as_posix()
         parts = path.relative_to(base).parts
@@ -693,6 +752,7 @@ def check(data_root, with_leakage: bool = True) -> dict:
             totals[f"style_{f.get('style')}"] += 1
             for o in f.get("outputs", []):
                 totals[f"output_{o.get('kind')}"] += 1
+                totals["output_registered"] += 1 if o.get("registered") is True else 0
             for t in f.get("transitions", []):
                 totals[f"transition_{t.get('kind')}"] += 1
                 totals["transitions_unknown"] += 1 if "*unknown" in (t.get("source"), t.get("target")) else 0
@@ -712,7 +772,7 @@ def check(data_root, with_leakage: bool = True) -> dict:
         fingerprints[key] = [f.get("fingerprint") for f in doc.get("fsms", [])]
     totals["ips"] = len({k[0] for k in present})
     for key in sorted(canonical - present):
-        problems.append(("inventory", f"missing FSM Analysis v1 for {key[0]}/{key[1]}"))
+        problems.append(("inventory", f"missing FSM Analysis v2 for {key[0]}/{key[1]}"))
     leak = {"status": "SKIPPED", "reason": "not requested", "problems": []}
     if with_leakage:
         leak = leakage(root, fingerprints)
@@ -745,12 +805,13 @@ def format_report(report: dict) -> str:
     t = report["totals"]
     keys = ["ips", "modules", "modules_with_fsms", "fsms", "confirmed", "candidate", "ambiguous", "unsupported",
             "quality_high", "quality_medium", "quality_low", "states", "transitions", "transitions_unknown",
-            "outputs", "output_moore", "output_mealy", "output_ambiguous", "actions", "couplings", "rejected",
+            "outputs", "output_moore", "output_mealy", "output_ambiguous", "output_registered", "actions",
+            "couplings", "rejected",
             "rejected_arithmetic_feedback", "rejected_no_state_predicate", "rejected_name_only",
             "rejected_no_closed_loop", "reset_state_known", "reachability_known"]
     pv = report["provenance"]
     lk = report["leakage"]
-    lines = [f"FSM Analysis v1 check: {report['status']} (schema {F.SCHEMA_NAME} v{F.SCHEMA_VERSION})",
+    lines = [f"FSM Analysis check: {report['status']} (schema {F.SCHEMA_NAME} v{F.SCHEMA_VERSION})",
              f"  {'canonical modules':28s}: {report['canonical_modules']}",
              f"  {'documents':28s}: {report['documents']}"]
     lines += [f"  {k.replace('_', ' '):28s}: {t.get(k, 0)}" for k in keys]
@@ -768,7 +829,7 @@ def format_report(report: dict) -> str:
 
 
 def main(argv=None) -> int:
-    parser = argparse.ArgumentParser(description="KF-DQ-011 FSM Analysis v1 validator")
+    parser = argparse.ArgumentParser(description="KF-DQ-011 FSM Analysis v2 validator")
     parser.add_argument("--data-root", default=os.environ.get("KRITVA_FORGE_DATA_ROOT"))
     parser.add_argument("--check", action="store_true", help="validate (default)")
     parser.add_argument("--json", help="also write the report JSON here")

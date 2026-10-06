@@ -37,7 +37,7 @@ Sections (all lists sorted; keys sorted):
                (path / sha256 / versions / source Semantic IR, KF-DQ-009),
                Structural Analysis v1 document (path / sha256 / versions /
                ``str1:`` structural identity / source Semantic IR and
-               Behavioral Semantics, KF-DQ-010), FSM Analysis v1 document
+               Behavioral Semantics, KF-DQ-010), FSM Analysis v2 document
                (path / sha256 / versions / ``fsm1:`` document identity /
                source Semantic IR, Behavioral Semantics and Structural
                Analysis, KF-DQ-011), prompt, RTL copy, dataset records and

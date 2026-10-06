@@ -3,7 +3,7 @@
 # SPDX-License-Identifier: Apache-2.0
 #
 # File        : helpers.py
-# Description : Inline RTL to FSM Analysis v1 test helpers (KF-DQ-011)
+# Description : Inline RTL to FSM Analysis v2 test helpers (KF-DQ-011)
 #
 # Component   : Kritva Forge
 # Module      : tests/fsm
@@ -12,7 +12,7 @@
 # Author      : Kritva Forge Team
 # Created     : 02-10-2026
 # =============================================================================
-"""Inline RTL -> Semantic IR v2 -> Behavioral Semantics v1 -> Structural Analysis v1 -> FSM Analysis v1."""
+"""Inline RTL -> Semantic IR v2 -> Behavioral Semantics v1 -> Structural Analysis v1 -> FSM Analysis v2."""
 
 from pathlib import Path
 
