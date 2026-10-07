@@ -1,0 +1,44 @@
+Write synthesizable Verilog/SystemVerilog RTL for the hardware module specified below. The specification describes behavior and structure, not source code.
+
+## Module
+Name: g08
+Ports:
+- clk: input, 1 bit
+- rst_n: input, 1 bit
+- req: input, 1 bit
+- grant: output, 1 bit
+
+## Clocks and resets
+- clock clk, rising edge
+- reset rst_n: async, active low
+
+## Registers
+- a_st (2 bits); updated on the rising edge of clk; reset by rst_n to I; controlled by req; otherwise holds its value (implicit hold)
+- b_st (1 bit); updated on the rising edge of clk; reset by rst_n to 0; controlled by a_st, req; otherwise holds its value (implicit hold)
+
+## Combinational logic
+- grant (continuous) depends on b_st
+
+## State machines
+FSM 1: state register a_st (2 bits); status confirmed; quality high; one-process; encoding binary
+Timing: clock clk, rising edge; reset rst_n (async) to I; enabled by req; implicit hold
+States: I = 0 (reset), W = 1, G = 2
+Reachability from the reset state: known (transition graph only)
+Transitions:
+- I -> W when req is 1
+- W -> G
+- G -> I
+- I -> I when req is 0 (holds) (priority unknown)
+Actions:
+- in G: b_st is assigned (register)
+FSM 2: state register b_st (1 bit); status candidate; quality low; one-process; encoding binary
+Timing: clock clk, rising edge; reset rst_n (async) to value 0; enabled by a_st, req; implicit hold
+States: value 0 (reset), value 1
+Reachability from the reset state: known (transition graph only)
+Output grant: moore
+Transitions:
+- value 0 -> value 1 when a_st is G
+- value 1 -> value 0 when req is 0
+- value 0 -> value 0 when a_st is not G (holds) (priority unknown)
+- value 1 -> value 1 when req is 1 (holds) (priority unknown)
+Coupling: FSM 2 tests the state of FSM 1

@@ -1,0 +1,15 @@
+Write synthesizable Verilog/SystemVerilog RTL for the hardware module specified below. The specification describes behavior and structure, not source code.
+
+## Module
+Name: z01
+Ports:
+- sel: input, 2 bits
+- a: input, 8 bits
+- b: input, 8 bits
+- c: input, 8 bits
+- y: output, 8 bits
+- z: output, 1 bit
+
+## Combinational logic
+- y depends on a, b, c; selected by sel
+- z (continuous) depends on a, b, sel

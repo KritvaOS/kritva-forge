@@ -1,0 +1,33 @@
+Write synthesizable Verilog/SystemVerilog RTL for the hardware module specified below. The specification describes behavior and structure, not source code.
+
+## Module
+Name: g24
+Ports:
+- clk: input, 1 bit
+- rst_n: input, 1 bit
+- a: input, 1 bit
+- abort: input, 1 bit
+- st: output, 2 bits
+
+## Clocks and resets
+- clock clk, rising edge
+- reset rst_n: async, active low
+
+## Registers
+- st (2 bits); updated on the rising edge of clk; reset by rst_n to I; controlled by a, abort; otherwise holds its value (implicit hold)
+
+## State machines
+FSM 1: state register st (2 bits); status confirmed; quality high; one-process; encoding binary
+Timing: clock clk, rising edge; reset rst_n (async) to I; enabled by a, abort; implicit hold
+States: I = 0 (reset), R = 1, F = 2
+Reachability from the reset state: known (transition graph only)
+Output st: moore, registered; updated at the clock edge from a, abort
+Transitions:
+- I -> R when a is 1
+- R -> F
+- F -> I
+- I -> I when abort is 1 [derived]
+- F -> I when abort is 1 [derived]
+- R -> I when abort is 1 [derived]
+- I -> I when abort is 0 (holds) [derived] (priority unknown)
+- I -> I when a is 0 (holds) (priority unknown)

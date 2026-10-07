@@ -462,6 +462,62 @@ def fsm_gate(data_root, final=False):
     return report
 
 
+def write_prompt_v2(data_root):
+    """Write Prompt v2 (behavior-aware prompt + sidecar) for every canonical module (KF-DQ-012).
+
+    Runs after the FSM Analysis v2 gate (AC-616 .. AC-618); fails closed on a
+    missing, version-mismatched or stale input.  Prompt v1 and the dataset
+    records are not touched; no dataset record consumes Prompt v2 before
+    KF-DQ-013.
+    """
+    from scripts.prompt_v2 import render as PR
+
+    try:
+        res = PR.write_all(data_root)
+    except PR.PromptError as exc:
+        raise RuntimeError(f"Prompt v2 generation refused (KF-DQ-012): {exc}") from exc
+    print(f"[INFO] Prompt v2: {res['prompts']} prompts, {res['sidecars']} sidecars")
+    return res
+
+
+def prompt_v2_gate(data_root, final=False):
+    """Validate every Prompt v2 artifact (KF-DQ-012; no command-line or environment override).
+
+    Before dataset generation the prompts are validated against their inputs;
+    after the split is written (``final=True``) the cross-split leakage
+    classification is recomputed and written, and the corpus report is
+    written (AC-619 .. AC-628).
+    """
+    from scripts.prompt_v2 import classify as PC
+    from scripts.prompt_v2 import validator as PV
+
+    report = PV.check(data_root, with_classification=final)
+    if final and report["status"] == "PASS":
+        PC.write(data_root)
+        PV.write_report(data_root, report)
+    print("[INFO] Prompt v2 gate" + (" (with cross-split classification)" if final else ""))
+    print(PV.format_report(report))
+    if report["status"] != "PASS":
+        raise RuntimeError("Prompt v2 gate failed (KF-DQ-012): " + "; ".join(report["problems"][:5]))
+    return report
+
+
+def compat_gate(data_root):
+    """Cross-repository version compatibility (KF-DQ-012 AC-508 .. AC-531); writes its report."""
+    from scripts.core import compat as C
+    from scripts.prompt_v2 import validator as PV
+
+    report = C.check(data_root)
+    C.write_report(data_root, report)
+    print(C.format_report(report))
+    if report["status"] != "PASS":
+        raise RuntimeError("compatibility gate failed (KF-DQ-012): " + "; ".join(report["problems"][:5]))
+    missing = PV.reports_check(data_root)
+    if missing:
+        raise RuntimeError("KF-DQ-012 reports incomplete: " + "; ".join(m for _, m in missing[:5]))
+    return report
+
+
 def write_provenance(data_root):
     """Write manifests/provenance_manifest.json and its validation report (KF-DQ-005)."""
     from scripts.core.provenance import (
@@ -608,6 +664,12 @@ def run_pipeline(
         #
         fsm_gate(data_root)
 
+        #
+        # KF-DQ-012: Prompt v2 after the FSM gate, then its own gate.
+        #
+        write_prompt_v2(data_root)
+        prompt_v2_gate(data_root)
+
         generate_datasets(
             normalized_root,
             datasets_root,
@@ -628,6 +690,13 @@ def run_pipeline(
         # the split just written; writes fsm_report.json.
         #
         fsm_gate(data_root, final=True)
+
+        #
+        # KF-DQ-012: final Prompt v2 gate after the split - revalidates every
+        # prompt, recomputes the cross-split leakage classification and writes
+        # the Prompt v2 and classification reports.
+        #
+        prompt_v2_gate(data_root, final=True)
 
         #
         # KF-DQ-005: canonical RTL provenance manifest + validation.
@@ -651,11 +720,18 @@ def run_pipeline(
         #
         manifest_gate(data_root)
 
+        #
+        # KF-DQ-012: version-based cross-repository compatibility (no commit
+        # hashes) and presence of the KF-DQ-012 reports.
+        #
+        compat_gate(data_root)
+
     check_portable_provenance(
         [normalized_root, os.path.join(os.path.dirname(normalized_root), "semantic_ir"),
          os.path.join(os.path.dirname(normalized_root), "behavior"),
          os.path.join(os.path.dirname(normalized_root), "structural"),
          os.path.join(os.path.dirname(normalized_root), "fsm"),
+         os.path.join(data_root, "generated", "prompt"),
          prompt_root, reports_root, datasets_root, splits_root,
          str(ForgeDataPaths.from_root(data_root).manifests)]
     )

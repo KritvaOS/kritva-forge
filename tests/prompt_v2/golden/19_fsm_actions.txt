@@ -1,0 +1,38 @@
+Write synthesizable Verilog/SystemVerilog RTL for the hardware module specified below. The specification describes behavior and structure, not source code.
+
+## Module
+Name: g19
+Ports:
+- clk: input, 1 bit
+- rst_n: input, 1 bit
+- req: input, 1 bit
+- ack: output, 1 bit
+- cnt: output, 4 bits
+
+## Clocks and resets
+- clock clk, rising edge
+- reset rst_n: async, active low
+
+## Registers
+- ack (1 bit); updated on the rising edge of clk; reset by rst_n to 0; controlled by st; otherwise holds its value (implicit hold)
+- cnt (4 bits); updated on the rising edge of clk; reset by rst_n to 0; next value depends on cnt; controlled by req, st; otherwise holds its value (implicit hold)
+- st (2 bits); updated on the rising edge of clk; reset by rst_n to IDLE; controlled by cnt, req; otherwise holds its value (implicit hold)
+
+## State machines
+FSM 1: state register st (2 bits); status confirmed; quality high; one-process; encoding binary
+Timing: clock clk, rising edge; reset rst_n (async) to IDLE; enabled by cnt, req; implicit hold
+States: IDLE = 0 (reset), WORK = 1, DONE = 2
+Reachability from the reset state: known (transition graph only)
+Output ack: moore, registered; updated at the clock edge from state only
+Output cnt: moore, registered; updated at the clock edge from req
+Transitions:
+- IDLE -> WORK when req is 1
+- WORK -> DONE when cnt is 7
+- DONE -> IDLE
+- WORK -> WORK when cnt is not 7 (holds) (priority unknown)
+- IDLE -> IDLE when req is 0 (holds) (priority unknown)
+Actions:
+- in DONE: ack is assigned (output)
+- in IDLE: ack is assigned (output)
+- in IDLE: cnt is assigned (output)
+- in WORK: cnt is assigned (output)

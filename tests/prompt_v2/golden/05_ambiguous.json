@@ -1,0 +1,162 @@
+{
+  "abstraction": {
+    "guard_fallbacks": 0,
+    "rendering": "dependency relationships and natural-language conditions; no HDL expressions"
+  },
+  "fsm": {
+    "actions_rendered": 0,
+    "ambiguous": 2,
+    "candidate": 0,
+    "confirmed": 0,
+    "couplings": 2,
+    "fsms": 2,
+    "quality": {
+      "ambiguous": 2,
+      "high": 0,
+      "low": 0,
+      "medium": 0,
+      "unsupported": 0
+    },
+    "section_truncated": false,
+    "states": 3,
+    "transitions": 6,
+    "transitions_rendered": 4,
+    "unknowns": 5,
+    "unsupported": 0
+  },
+  "generator": {
+    "name": "kritva-forge scripts/prompt_v2 v1",
+    "version": 1
+  },
+  "identity": "pv2:2111017b81ca7b96",
+  "inputs": {
+    "behavior": {
+      "identity_version": 1,
+      "path": "normalized/behavior/v1/fx/g15.json",
+      "schema_version": 1,
+      "sha256": "20d2c07ea70816b7202df6b07651bcc38c3b3dd6f5c479c0e6c1b9c7cb5f4a6a"
+    },
+    "fsm": {
+      "identity_version": 1,
+      "path": "normalized/fsm/v2/fx/g15.json",
+      "schema_version": 2,
+      "sha256": "b0206573220e250666dc2257325d1d96f614ac1b1570b92fd8a6d010dca4c860"
+    },
+    "semantic_ir": {
+      "identity_version": 1,
+      "path": "normalized/semantic_ir/v2/fx/g15.json",
+      "schema_version": 2,
+      "sha256": "3f7a34e3abe284a6d3d75837feb217a7b13dc13e685b66102789b5c84a226672"
+    },
+    "structural": {
+      "identity_version": 1,
+      "path": "normalized/structural/v1/fx/g15.json",
+      "schema_version": 1,
+      "sha256": "b82a62a1245fee8c732286134f832498e3860751ec1c1ca463f73b986ac1f2f5"
+    }
+  },
+  "leakage": {
+    "completion_tokens": 115,
+    "longest_run": 2,
+    "longest_run_tokens": "1 :",
+    "metric_version": "leakage-v1",
+    "overlap": 0.0,
+    "overlapping_ngrams": 0,
+    "prompt_ngrams": 170,
+    "prompt_tokens": 381,
+    "raw_overlap": 0.0,
+    "status": "PASS",
+    "threshold_version": "thresholds-v1",
+    "thresholds": {
+      "longest_run_max": 6,
+      "overlap_max": 0.2
+    },
+    "tokenizer_version": "sv-lex-v1"
+  },
+  "module": {
+    "ip": "fx",
+    "module_id": "mod1:cc71c610bf990471",
+    "name": "g15"
+  },
+  "prompt": {
+    "budget_bytes": 32768,
+    "bytes": 1615,
+    "omitted_sections": [
+      "Combinational logic",
+      "Submodules"
+    ],
+    "original_bytes": 1615,
+    "path": "generated/prompt/v2/fx/g15.behavior_aware.txt",
+    "sections": [
+      {
+        "emitted": null,
+        "name": "Module",
+        "records": null,
+        "truncated": false
+      },
+      {
+        "emitted": null,
+        "name": "Clocks and resets",
+        "records": null,
+        "truncated": false
+      },
+      {
+        "emitted": 2,
+        "name": "Registers",
+        "records": 2,
+        "truncated": false
+      },
+      {
+        "emitted": 4,
+        "name": "State machines",
+        "records": 4,
+        "truncated": false
+      }
+    ],
+    "sha256": "2b59c31449e73ac2fd81c18a3e5672e8acc098869dc64fc5afb77d361fa144b1",
+    "truncated": false,
+    "truncated_sections": []
+  },
+  "schema": {
+    "name": "kritva-forge-prompt",
+    "version": 2
+  },
+  "source": {
+    "path": "raw/rtl/original/fx/fx.sv",
+    "sha256": "792b36109ffbb4e658bda9bad17ea05c3f3f776096a10914caaa7d5602bc183c"
+  },
+  "uncertainty": {
+    "by_category": {
+      "ambiguous": 2,
+      "candidate": 0,
+      "derived": 0,
+      "unknown": 9,
+      "unresolved": 0,
+      "unsupported": 0
+    },
+    "markers": {
+      "[unknown]": 4,
+      "an unknown state": 5,
+      "status ambiguous": 2
+    }
+  },
+  "variant": "behavior_aware",
+  "versions": {
+    "behavior": 1,
+    "behavior_identity": 1,
+    "fsm": 2,
+    "fsm_analyzer": 2,
+    "fsm_identity": 1,
+    "leakage_metric": "leakage-v1",
+    "leakage_thresholds": "thresholds-v1",
+    "prompt": 2,
+    "prompt_generator": 1,
+    "prompt_identity": 1,
+    "semantic_identity": 1,
+    "semantic_ir": 2,
+    "structural": 1,
+    "structural_analyzer": 1,
+    "structural_identity": 1,
+    "tokenizer": "sv-lex-v1"
+  }
+}

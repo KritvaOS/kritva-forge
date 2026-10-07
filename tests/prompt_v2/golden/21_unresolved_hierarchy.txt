@@ -1,0 +1,17 @@
+Write synthesizable Verilog/SystemVerilog RTL for the hardware module specified below. The specification describes behavior and structure, not source code.
+
+## Module
+Name: h01
+Ports:
+- clk: input, 1 bit
+- x: input, 1 bit
+- z: input, 1 bit
+- y: output, 1 bit
+- q: output, 1 bit
+
+## Combinational logic
+- y (continuous) depends on w, x
+
+## Submodules
+- u_ext: instance of missing_cell (unresolved): o <-> q; i <-> w
+- u_leaf: instance of h01_leaf: a <- x; b <- z; y -> w

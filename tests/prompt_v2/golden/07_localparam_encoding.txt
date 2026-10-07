@@ -1,0 +1,35 @@
+Write synthesizable Verilog/SystemVerilog RTL for the hardware module specified below. The specification describes behavior and structure, not source code.
+
+## Module
+Name: g12
+Ports:
+- clk: input, 1 bit
+- rst_n: input, 1 bit
+- a: input, 1 bit
+- b: input, 1 bit
+- busy: output, 1 bit
+
+## Clocks and resets
+- clock clk, rising edge
+- reset rst_n: async, active low
+
+## Registers
+- cs (2 bits); updated on the rising edge of clk; reset by rst_n to I; next value depends on ns
+
+## Combinational logic
+- ns depends on cs; selected by a, b, cs
+- busy (continuous) depends on I, cs
+
+## State machines
+FSM 1: state register cs (2 bits); status confirmed; quality high; two-process; encoding gray
+Timing: clock clk, rising edge; reset rst_n (async) to I; implicit hold
+States: I = 0 (reset), X = 1, Y = 2
+Reachability from the reset state: known (transition graph only)
+Output busy: moore
+Transitions:
+- Y -> Y (holds) [derived]
+- I -> I (holds) [derived]
+- I -> X when a is 1
+- I -> Y when a is 0 and b is 1
+- X -> I
+- Y -> I when b is 0

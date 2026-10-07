@@ -1,0 +1,155 @@
+{
+  "abstraction": {
+    "guard_fallbacks": 0,
+    "rendering": "dependency relationships and natural-language conditions; no HDL expressions"
+  },
+  "fsm": {
+    "actions_rendered": 0,
+    "ambiguous": 0,
+    "candidate": 0,
+    "confirmed": 0,
+    "couplings": 0,
+    "fsms": 0,
+    "quality": {
+      "ambiguous": 0,
+      "high": 0,
+      "low": 0,
+      "medium": 0,
+      "unsupported": 0
+    },
+    "section_truncated": false,
+    "states": 0,
+    "transitions": 0,
+    "transitions_rendered": 0,
+    "unknowns": 0,
+    "unsupported": 0
+  },
+  "generator": {
+    "name": "kritva-forge scripts/prompt_v2 v1",
+    "version": 1
+  },
+  "identity": "pv2:66e005906d73cb7f",
+  "inputs": {
+    "behavior": {
+      "identity_version": 1,
+      "path": "normalized/behavior/v1/fx/h01.json",
+      "schema_version": 1,
+      "sha256": "a50c25af6d297de31bab904dd73dac5e26279ba5e00b2f1cd1b8a551435d7253"
+    },
+    "fsm": {
+      "identity_version": 1,
+      "path": "normalized/fsm/v2/fx/h01.json",
+      "schema_version": 2,
+      "sha256": "71b384fcb7cda9ea3d88be2e20a7141c0c2f116dd7c72c6b2fb3164d2b016482"
+    },
+    "semantic_ir": {
+      "identity_version": 1,
+      "path": "normalized/semantic_ir/v2/fx/h01.json",
+      "schema_version": 2,
+      "sha256": "9cae2c0385cebfaca480824d01d3e3f19543643262194a44bd1d9824a826a4e7"
+    },
+    "structural": {
+      "identity_version": 1,
+      "path": "normalized/structural/v1/fx/h01.json",
+      "schema_version": 1,
+      "sha256": "20e8ad4f896b9f930304a9f533827d64d66da3eeb0244bf76e45e0940c045d91"
+    }
+  },
+  "leakage": {
+    "completion_tokens": 89,
+    "longest_run": 2,
+    "longest_run_tokens": "y (",
+    "metric_version": "leakage-v1",
+    "overlap": 0.0,
+    "overlapping_ngrams": 0,
+    "prompt_ngrams": 42,
+    "prompt_tokens": 123,
+    "raw_overlap": 0.0,
+    "status": "PASS",
+    "threshold_version": "thresholds-v1",
+    "thresholds": {
+      "longest_run_max": 6,
+      "overlap_max": 0.2
+    },
+    "tokenizer_version": "sv-lex-v1"
+  },
+  "module": {
+    "ip": "fx",
+    "module_id": "mod1:0e44d209ac5029fa",
+    "name": "h01"
+  },
+  "prompt": {
+    "budget_bytes": 32768,
+    "bytes": 470,
+    "omitted_sections": [
+      "Clocks and resets",
+      "Registers",
+      "State machines"
+    ],
+    "original_bytes": 470,
+    "path": "generated/prompt/v2/fx/h01.behavior_aware.txt",
+    "sections": [
+      {
+        "emitted": null,
+        "name": "Module",
+        "records": null,
+        "truncated": false
+      },
+      {
+        "emitted": 1,
+        "name": "Combinational logic",
+        "records": 1,
+        "truncated": false
+      },
+      {
+        "emitted": 2,
+        "name": "Submodules",
+        "records": 2,
+        "truncated": false
+      }
+    ],
+    "sha256": "90c94a9ce7a6d4d9a2d0b4103674ec9aefb6f6e2c7761de715f7cdbf4df20159",
+    "truncated": false,
+    "truncated_sections": []
+  },
+  "schema": {
+    "name": "kritva-forge-prompt",
+    "version": 2
+  },
+  "source": {
+    "path": "raw/rtl/original/fx/fx.sv",
+    "sha256": "226835c3fea0aae6d99d3c1b765a4d3e9fa092c0fa20927688d9f35e68fab383"
+  },
+  "uncertainty": {
+    "by_category": {
+      "ambiguous": 0,
+      "candidate": 0,
+      "derived": 0,
+      "unknown": 0,
+      "unresolved": 1,
+      "unsupported": 0
+    },
+    "markers": {
+      "(unresolved)": 1
+    }
+  },
+  "variant": "behavior_aware",
+  "versions": {
+    "behavior": 1,
+    "behavior_identity": 1,
+    "fsm": 2,
+    "fsm_analyzer": 2,
+    "fsm_identity": 1,
+    "leakage_metric": "leakage-v1",
+    "leakage_thresholds": "thresholds-v1",
+    "prompt": 2,
+    "prompt_generator": 1,
+    "prompt_identity": 1,
+    "semantic_identity": 1,
+    "semantic_ir": 2,
+    "structural": 1,
+    "structural_analyzer": 1,
+    "structural_identity": 1,
+    "tokenizer": "sv-lex-v1"
+  }
+}

@@ -1,0 +1,28 @@
+Write synthesizable Verilog/SystemVerilog RTL for the hardware module specified below. The specification describes behavior and structure, not source code.
+
+## Module
+Name: g06
+Ports:
+- clk: input, 1 bit
+- rst_n: input, 1 bit
+- k: input, 1 bit
+- mode_q: output, 2 bits
+
+## Clocks and resets
+- clock clk, rising edge
+- reset rst_n: async, active low
+
+## Registers
+- mode_q (2 bits); updated on the rising edge of clk; reset by rst_n to 3; controlled by k; otherwise holds its value (implicit hold)
+
+## State machines
+FSM 1: state register mode_q (2 bits); status confirmed; quality medium; one-process; encoding custom
+Timing: clock clk, rising edge; reset rst_n (async) to value 3; enabled by k; implicit hold
+States: value 1, value 2, value 3 (reset)
+Reachability from the reset state: known (transition graph only)
+Output mode_q: moore, registered; updated at the clock edge from k
+Transitions:
+- value 3 -> value 1 when k is 1
+- value 1 -> value 2
+- value 2 -> value 3 (default) [derived]
+- value 3 -> value 3 when k is 0 (holds) (priority unknown)

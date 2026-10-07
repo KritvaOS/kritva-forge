@@ -1,0 +1,316 @@
+Write synthesizable Verilog/SystemVerilog RTL for the hardware module specified below. The specification describes behavior and structure, not source code.
+
+## Module
+Name: t01
+Ports:
+- clk: input, 1 bit
+- rst_n: input, 1 bit
+- din: input, 8 bits
+- go: input, 1 bit
+- st: output, 2 bits
+- dout: output, 8 bits
+
+## Clocks and resets
+- clock clk, rising edge
+- reset rst_n: async, active low
+
+## Registers
+- st (2 bits); updated on the rising edge of clk; reset by rst_n to IDLE; controlled by go; otherwise holds its value (implicit hold)
+- stage_register_000 (8 bits); updated on the rising edge of clk; next value depends on din
+- stage_register_001 (8 bits); updated on the rising edge of clk; next value depends on din, stage_register_000
+- stage_register_002 (8 bits); updated on the rising edge of clk; next value depends on din, stage_register_001
+- stage_register_003 (8 bits); updated on the rising edge of clk; next value depends on din, stage_register_002
+- stage_register_004 (8 bits); updated on the rising edge of clk; next value depends on din, stage_register_003
+- stage_register_005 (8 bits); updated on the rising edge of clk; next value depends on din, stage_register_004
+- stage_register_006 (8 bits); updated on the rising edge of clk; next value depends on din, stage_register_005
+- stage_register_007 (8 bits); updated on the rising edge of clk; next value depends on din, stage_register_006
+- stage_register_008 (8 bits); updated on the rising edge of clk; next value depends on din, stage_register_007
+- stage_register_009 (8 bits); updated on the rising edge of clk; next value depends on din, stage_register_008
+- stage_register_010 (8 bits); updated on the rising edge of clk; next value depends on din, stage_register_009
+- stage_register_011 (8 bits); updated on the rising edge of clk; next value depends on din, stage_register_010
+- stage_register_012 (8 bits); updated on the rising edge of clk; next value depends on din, stage_register_011
+- stage_register_013 (8 bits); updated on the rising edge of clk; next value depends on din, stage_register_012
+- stage_register_014 (8 bits); updated on the rising edge of clk; next value depends on din, stage_register_013
+- stage_register_015 (8 bits); updated on the rising edge of clk; next value depends on din, stage_register_014
+- stage_register_016 (8 bits); updated on the rising edge of clk; next value depends on din, stage_register_015
+- stage_register_017 (8 bits); updated on the rising edge of clk; next value depends on din, stage_register_016
+- stage_register_018 (8 bits); updated on the rising edge of clk; next value depends on din, stage_register_017
+- stage_register_019 (8 bits); updated on the rising edge of clk; next value depends on din, stage_register_018
+- stage_register_020 (8 bits); updated on the rising edge of clk; next value depends on din, stage_register_019
+- stage_register_021 (8 bits); updated on the rising edge of clk; next value depends on din, stage_register_020
+- stage_register_022 (8 bits); updated on the rising edge of clk; next value depends on din, stage_register_021
+- stage_register_023 (8 bits); updated on the rising edge of clk; next value depends on din, stage_register_022
+- stage_register_024 (8 bits); updated on the rising edge of clk; next value depends on din, stage_register_023
+- stage_register_025 (8 bits); updated on the rising edge of clk; next value depends on din, stage_register_024
+- stage_register_026 (8 bits); updated on the rising edge of clk; next value depends on din, stage_register_025
+- stage_register_027 (8 bits); updated on the rising edge of clk; next value depends on din, stage_register_026
+- stage_register_028 (8 bits); updated on the rising edge of clk; next value depends on din, stage_register_027
+- stage_register_029 (8 bits); updated on the rising edge of clk; next value depends on din, stage_register_028
+- stage_register_030 (8 bits); updated on the rising edge of clk; next value depends on din, stage_register_029
+- stage_register_031 (8 bits); updated on the rising edge of clk; next value depends on din, stage_register_030
+- stage_register_032 (8 bits); updated on the rising edge of clk; next value depends on din, stage_register_031
+- stage_register_033 (8 bits); updated on the rising edge of clk; next value depends on din, stage_register_032
+- stage_register_034 (8 bits); updated on the rising edge of clk; next value depends on din, stage_register_033
+- stage_register_035 (8 bits); updated on the rising edge of clk; next value depends on din, stage_register_034
+- stage_register_036 (8 bits); updated on the rising edge of clk; next value depends on din, stage_register_035
+- stage_register_037 (8 bits); updated on the rising edge of clk; next value depends on din, stage_register_036
+- stage_register_038 (8 bits); updated on the rising edge of clk; next value depends on din, stage_register_037
+- stage_register_039 (8 bits); updated on the rising edge of clk; next value depends on din, stage_register_038
+- stage_register_040 (8 bits); updated on the rising edge of clk; next value depends on din, stage_register_039
+- stage_register_041 (8 bits); updated on the rising edge of clk; next value depends on din, stage_register_040
+- stage_register_042 (8 bits); updated on the rising edge of clk; next value depends on din, stage_register_041
+- stage_register_043 (8 bits); updated on the rising edge of clk; next value depends on din, stage_register_042
+- stage_register_044 (8 bits); updated on the rising edge of clk; next value depends on din, stage_register_043
+- stage_register_045 (8 bits); updated on the rising edge of clk; next value depends on din, stage_register_044
+- stage_register_046 (8 bits); updated on the rising edge of clk; next value depends on din, stage_register_045
+- stage_register_047 (8 bits); updated on the rising edge of clk; next value depends on din, stage_register_046
+- stage_register_048 (8 bits); updated on the rising edge of clk; next value depends on din, stage_register_047
+- stage_register_049 (8 bits); updated on the rising edge of clk; next value depends on din, stage_register_048
+- stage_register_050 (8 bits); updated on the rising edge of clk; next value depends on din, stage_register_049
+- stage_register_051 (8 bits); updated on the rising edge of clk; next value depends on din, stage_register_050
+- stage_register_052 (8 bits); updated on the rising edge of clk; next value depends on din, stage_register_051
+- stage_register_053 (8 bits); updated on the rising edge of clk; next value depends on din, stage_register_052
+- stage_register_054 (8 bits); updated on the rising edge of clk; next value depends on din, stage_register_053
+- stage_register_055 (8 bits); updated on the rising edge of clk; next value depends on din, stage_register_054
+- stage_register_056 (8 bits); updated on the rising edge of clk; next value depends on din, stage_register_055
+- stage_register_057 (8 bits); updated on the rising edge of clk; next value depends on din, stage_register_056
+- stage_register_058 (8 bits); updated on the rising edge of clk; next value depends on din, stage_register_057
+- stage_register_059 (8 bits); updated on the rising edge of clk; next value depends on din, stage_register_058
+- stage_register_060 (8 bits); updated on the rising edge of clk; next value depends on din, stage_register_059
+- stage_register_061 (8 bits); updated on the rising edge of clk; next value depends on din, stage_register_060
+- stage_register_062 (8 bits); updated on the rising edge of clk; next value depends on din, stage_register_061
+- stage_register_063 (8 bits); updated on the rising edge of clk; next value depends on din, stage_register_062
+- stage_register_064 (8 bits); updated on the rising edge of clk; next value depends on din, stage_register_063
+- stage_register_065 (8 bits); updated on the rising edge of clk; next value depends on din, stage_register_064
+- stage_register_066 (8 bits); updated on the rising edge of clk; next value depends on din, stage_register_065
+- stage_register_067 (8 bits); updated on the rising edge of clk; next value depends on din, stage_register_066
+- stage_register_068 (8 bits); updated on the rising edge of clk; next value depends on din, stage_register_067
+- stage_register_069 (8 bits); updated on the rising edge of clk; next value depends on din, stage_register_068
+- stage_register_070 (8 bits); updated on the rising edge of clk; next value depends on din, stage_register_069
+- stage_register_071 (8 bits); updated on the rising edge of clk; next value depends on din, stage_register_070
+- stage_register_072 (8 bits); updated on the rising edge of clk; next value depends on din, stage_register_071
+- stage_register_073 (8 bits); updated on the rising edge of clk; next value depends on din, stage_register_072
+- stage_register_074 (8 bits); updated on the rising edge of clk; next value depends on din, stage_register_073
+- stage_register_075 (8 bits); updated on the rising edge of clk; next value depends on din, stage_register_074
+- stage_register_076 (8 bits); updated on the rising edge of clk; next value depends on din, stage_register_075
+- stage_register_077 (8 bits); updated on the rising edge of clk; next value depends on din, stage_register_076
+- stage_register_078 (8 bits); updated on the rising edge of clk; next value depends on din, stage_register_077
+- stage_register_079 (8 bits); updated on the rising edge of clk; next value depends on din, stage_register_078
+- stage_register_080 (8 bits); updated on the rising edge of clk; next value depends on din, stage_register_079
+- stage_register_081 (8 bits); updated on the rising edge of clk; next value depends on din, stage_register_080
+- stage_register_082 (8 bits); updated on the rising edge of clk; next value depends on din, stage_register_081
+- stage_register_083 (8 bits); updated on the rising edge of clk; next value depends on din, stage_register_082
+- stage_register_084 (8 bits); updated on the rising edge of clk; next value depends on din, stage_register_083
+- stage_register_085 (8 bits); updated on the rising edge of clk; next value depends on din, stage_register_084
+- stage_register_086 (8 bits); updated on the rising edge of clk; next value depends on din, stage_register_085
+- stage_register_087 (8 bits); updated on the rising edge of clk; next value depends on din, stage_register_086
+- stage_register_088 (8 bits); updated on the rising edge of clk; next value depends on din, stage_register_087
+- stage_register_089 (8 bits); updated on the rising edge of clk; next value depends on din, stage_register_088
+- stage_register_090 (8 bits); updated on the rising edge of clk; next value depends on din, stage_register_089
+- stage_register_091 (8 bits); updated on the rising edge of clk; next value depends on din, stage_register_090
+- stage_register_092 (8 bits); updated on the rising edge of clk; next value depends on din, stage_register_091
+- stage_register_093 (8 bits); updated on the rising edge of clk; next value depends on din, stage_register_092
+- stage_register_094 (8 bits); updated on the rising edge of clk; next value depends on din, stage_register_093
+- stage_register_095 (8 bits); updated on the rising edge of clk; next value depends on din, stage_register_094
+- stage_register_096 (8 bits); updated on the rising edge of clk; next value depends on din, stage_register_095
+- stage_register_097 (8 bits); updated on the rising edge of clk; next value depends on din, stage_register_096
+- stage_register_098 (8 bits); updated on the rising edge of clk; next value depends on din, stage_register_097
+- stage_register_099 (8 bits); updated on the rising edge of clk; next value depends on din, stage_register_098
+- stage_register_100 (8 bits); updated on the rising edge of clk; next value depends on din, stage_register_099
+- stage_register_101 (8 bits); updated on the rising edge of clk; next value depends on din, stage_register_100
+- stage_register_102 (8 bits); updated on the rising edge of clk; next value depends on din, stage_register_101
+- stage_register_103 (8 bits); updated on the rising edge of clk; next value depends on din, stage_register_102
+- stage_register_104 (8 bits); updated on the rising edge of clk; next value depends on din, stage_register_103
+- stage_register_105 (8 bits); updated on the rising edge of clk; next value depends on din, stage_register_104
+- stage_register_106 (8 bits); updated on the rising edge of clk; next value depends on din, stage_register_105
+- stage_register_107 (8 bits); updated on the rising edge of clk; next value depends on din, stage_register_106
+- stage_register_108 (8 bits); updated on the rising edge of clk; next value depends on din, stage_register_107
+- stage_register_109 (8 bits); updated on the rising edge of clk; next value depends on din, stage_register_108
+- stage_register_110 (8 bits); updated on the rising edge of clk; next value depends on din, stage_register_109
+- stage_register_111 (8 bits); updated on the rising edge of clk; next value depends on din, stage_register_110
+- stage_register_112 (8 bits); updated on the rising edge of clk; next value depends on din, stage_register_111
+- stage_register_113 (8 bits); updated on the rising edge of clk; next value depends on din, stage_register_112
+- stage_register_114 (8 bits); updated on the rising edge of clk; next value depends on din, stage_register_113
+- stage_register_115 (8 bits); updated on the rising edge of clk; next value depends on din, stage_register_114
+- stage_register_116 (8 bits); updated on the rising edge of clk; next value depends on din, stage_register_115
+- stage_register_117 (8 bits); updated on the rising edge of clk; next value depends on din, stage_register_116
+- stage_register_118 (8 bits); updated on the rising edge of clk; next value depends on din, stage_register_117
+- stage_register_119 (8 bits); updated on the rising edge of clk; next value depends on din, stage_register_118
+- stage_register_120 (8 bits); updated on the rising edge of clk; next value depends on din, stage_register_119
+- stage_register_121 (8 bits); updated on the rising edge of clk; next value depends on din, stage_register_120
+- stage_register_122 (8 bits); updated on the rising edge of clk; next value depends on din, stage_register_121
+- stage_register_123 (8 bits); updated on the rising edge of clk; next value depends on din, stage_register_122
+- stage_register_124 (8 bits); updated on the rising edge of clk; next value depends on din, stage_register_123
+- stage_register_125 (8 bits); updated on the rising edge of clk; next value depends on din, stage_register_124
+- stage_register_126 (8 bits); updated on the rising edge of clk; next value depends on din, stage_register_125
+- stage_register_127 (8 bits); updated on the rising edge of clk; next value depends on din, stage_register_126
+- stage_register_128 (8 bits); updated on the rising edge of clk; next value depends on din, stage_register_127
+- stage_register_129 (8 bits); updated on the rising edge of clk; next value depends on din, stage_register_128
+- stage_register_130 (8 bits); updated on the rising edge of clk; next value depends on din, stage_register_129
+- stage_register_131 (8 bits); updated on the rising edge of clk; next value depends on din, stage_register_130
+- stage_register_132 (8 bits); updated on the rising edge of clk; next value depends on din, stage_register_131
+- stage_register_133 (8 bits); updated on the rising edge of clk; next value depends on din, stage_register_132
+- stage_register_134 (8 bits); updated on the rising edge of clk; next value depends on din, stage_register_133
+- stage_register_135 (8 bits); updated on the rising edge of clk; next value depends on din, stage_register_134
+- stage_register_136 (8 bits); updated on the rising edge of clk; next value depends on din, stage_register_135
+- stage_register_137 (8 bits); updated on the rising edge of clk; next value depends on din, stage_register_136
+- stage_register_138 (8 bits); updated on the rising edge of clk; next value depends on din, stage_register_137
+- stage_register_139 (8 bits); updated on the rising edge of clk; next value depends on din, stage_register_138
+- stage_register_140 (8 bits); updated on the rising edge of clk; next value depends on din, stage_register_139
+- stage_register_141 (8 bits); updated on the rising edge of clk; next value depends on din, stage_register_140
+- stage_register_142 (8 bits); updated on the rising edge of clk; next value depends on din, stage_register_141
+- stage_register_143 (8 bits); updated on the rising edge of clk; next value depends on din, stage_register_142
+- stage_register_144 (8 bits); updated on the rising edge of clk; next value depends on din, stage_register_143
+- stage_register_145 (8 bits); updated on the rising edge of clk; next value depends on din, stage_register_144
+- stage_register_146 (8 bits); updated on the rising edge of clk; next value depends on din, stage_register_145
+- stage_register_147 (8 bits); updated on the rising edge of clk; next value depends on din, stage_register_146
+- stage_register_148 (8 bits); updated on the rising edge of clk; next value depends on din, stage_register_147
+- stage_register_149 (8 bits); updated on the rising edge of clk; next value depends on din, stage_register_148
+- stage_register_150 (8 bits); updated on the rising edge of clk; next value depends on din, stage_register_149
+- stage_register_151 (8 bits); updated on the rising edge of clk; next value depends on din, stage_register_150
+- stage_register_152 (8 bits); updated on the rising edge of clk; next value depends on din, stage_register_151
+- stage_register_153 (8 bits); updated on the rising edge of clk; next value depends on din, stage_register_152
+- stage_register_154 (8 bits); updated on the rising edge of clk; next value depends on din, stage_register_153
+- stage_register_155 (8 bits); updated on the rising edge of clk; next value depends on din, stage_register_154
+- stage_register_156 (8 bits); updated on the rising edge of clk; next value depends on din, stage_register_155
+- stage_register_157 (8 bits); updated on the rising edge of clk; next value depends on din, stage_register_156
+- stage_register_158 (8 bits); updated on the rising edge of clk; next value depends on din, stage_register_157
+- stage_register_159 (8 bits); updated on the rising edge of clk; next value depends on din, stage_register_158
+- stage_register_160 (8 bits); updated on the rising edge of clk; next value depends on din, stage_register_159
+- stage_register_161 (8 bits); updated on the rising edge of clk; next value depends on din, stage_register_160
+- stage_register_162 (8 bits); updated on the rising edge of clk; next value depends on din, stage_register_161
+- stage_register_163 (8 bits); updated on the rising edge of clk; next value depends on din, stage_register_162
+- stage_register_164 (8 bits); updated on the rising edge of clk; next value depends on din, stage_register_163
+- stage_register_165 (8 bits); updated on the rising edge of clk; next value depends on din, stage_register_164
+- stage_register_166 (8 bits); updated on the rising edge of clk; next value depends on din, stage_register_165
+- stage_register_167 (8 bits); updated on the rising edge of clk; next value depends on din, stage_register_166
+- stage_register_168 (8 bits); updated on the rising edge of clk; next value depends on din, stage_register_167
+- stage_register_169 (8 bits); updated on the rising edge of clk; next value depends on din, stage_register_168
+- stage_register_170 (8 bits); updated on the rising edge of clk; next value depends on din, stage_register_169
+- stage_register_171 (8 bits); updated on the rising edge of clk; next value depends on din, stage_register_170
+- stage_register_172 (8 bits); updated on the rising edge of clk; next value depends on din, stage_register_171
+- stage_register_173 (8 bits); updated on the rising edge of clk; next value depends on din, stage_register_172
+- stage_register_174 (8 bits); updated on the rising edge of clk; next value depends on din, stage_register_173
+- stage_register_175 (8 bits); updated on the rising edge of clk; next value depends on din, stage_register_174
+- stage_register_176 (8 bits); updated on the rising edge of clk; next value depends on din, stage_register_175
+- stage_register_177 (8 bits); updated on the rising edge of clk; next value depends on din, stage_register_176
+- stage_register_178 (8 bits); updated on the rising edge of clk; next value depends on din, stage_register_177
+- stage_register_179 (8 bits); updated on the rising edge of clk; next value depends on din, stage_register_178
+- stage_register_180 (8 bits); updated on the rising edge of clk; next value depends on din, stage_register_179
+- stage_register_181 (8 bits); updated on the rising edge of clk; next value depends on din, stage_register_180
+- stage_register_182 (8 bits); updated on the rising edge of clk; next value depends on din, stage_register_181
+- stage_register_183 (8 bits); updated on the rising edge of clk; next value depends on din, stage_register_182
+- stage_register_184 (8 bits); updated on the rising edge of clk; next value depends on din, stage_register_183
+- stage_register_185 (8 bits); updated on the rising edge of clk; next value depends on din, stage_register_184
+- stage_register_186 (8 bits); updated on the rising edge of clk; next value depends on din, stage_register_185
+- stage_register_187 (8 bits); updated on the rising edge of clk; next value depends on din, stage_register_186
+- stage_register_188 (8 bits); updated on the rising edge of clk; next value depends on din, stage_register_187
+- stage_register_189 (8 bits); updated on the rising edge of clk; next value depends on din, stage_register_188
+- stage_register_190 (8 bits); updated on the rising edge of clk; next value depends on din, stage_register_189
+- stage_register_191 (8 bits); updated on the rising edge of clk; next value depends on din, stage_register_190
+- stage_register_192 (8 bits); updated on the rising edge of clk; next value depends on din, stage_register_191
+- stage_register_193 (8 bits); updated on the rising edge of clk; next value depends on din, stage_register_192
+- stage_register_194 (8 bits); updated on the rising edge of clk; next value depends on din, stage_register_193
+- stage_register_195 (8 bits); updated on the rising edge of clk; next value depends on din, stage_register_194
+- stage_register_196 (8 bits); updated on the rising edge of clk; next value depends on din, stage_register_195
+- stage_register_197 (8 bits); updated on the rising edge of clk; next value depends on din, stage_register_196
+- stage_register_198 (8 bits); updated on the rising edge of clk; next value depends on din, stage_register_197
+- stage_register_199 (8 bits); updated on the rising edge of clk; next value depends on din, stage_register_198
+- stage_register_200 (8 bits); updated on the rising edge of clk; next value depends on din, stage_register_199
+- stage_register_201 (8 bits); updated on the rising edge of clk; next value depends on din, stage_register_200
+- stage_register_202 (8 bits); updated on the rising edge of clk; next value depends on din, stage_register_201
+- stage_register_203 (8 bits); updated on the rising edge of clk; next value depends on din, stage_register_202
+- stage_register_204 (8 bits); updated on the rising edge of clk; next value depends on din, stage_register_203
+- stage_register_205 (8 bits); updated on the rising edge of clk; next value depends on din, stage_register_204
+- stage_register_206 (8 bits); updated on the rising edge of clk; next value depends on din, stage_register_205
+- stage_register_207 (8 bits); updated on the rising edge of clk; next value depends on din, stage_register_206
+- stage_register_208 (8 bits); updated on the rising edge of clk; next value depends on din, stage_register_207
+- stage_register_209 (8 bits); updated on the rising edge of clk; next value depends on din, stage_register_208
+- stage_register_210 (8 bits); updated on the rising edge of clk; next value depends on din, stage_register_209
+- stage_register_211 (8 bits); updated on the rising edge of clk; next value depends on din, stage_register_210
+- stage_register_212 (8 bits); updated on the rising edge of clk; next value depends on din, stage_register_211
+- stage_register_213 (8 bits); updated on the rising edge of clk; next value depends on din, stage_register_212
+- stage_register_214 (8 bits); updated on the rising edge of clk; next value depends on din, stage_register_213
+- stage_register_215 (8 bits); updated on the rising edge of clk; next value depends on din, stage_register_214
+- stage_register_216 (8 bits); updated on the rising edge of clk; next value depends on din, stage_register_215
+- stage_register_217 (8 bits); updated on the rising edge of clk; next value depends on din, stage_register_216
+- stage_register_218 (8 bits); updated on the rising edge of clk; next value depends on din, stage_register_217
+- stage_register_219 (8 bits); updated on the rising edge of clk; next value depends on din, stage_register_218
+- stage_register_220 (8 bits); updated on the rising edge of clk; next value depends on din, stage_register_219
+- stage_register_221 (8 bits); updated on the rising edge of clk; next value depends on din, stage_register_220
+- stage_register_222 (8 bits); updated on the rising edge of clk; next value depends on din, stage_register_221
+- stage_register_223 (8 bits); updated on the rising edge of clk; next value depends on din, stage_register_222
+- stage_register_224 (8 bits); updated on the rising edge of clk; next value depends on din, stage_register_223
+- stage_register_225 (8 bits); updated on the rising edge of clk; next value depends on din, stage_register_224
+- stage_register_226 (8 bits); updated on the rising edge of clk; next value depends on din, stage_register_225
+- stage_register_227 (8 bits); updated on the rising edge of clk; next value depends on din, stage_register_226
+- stage_register_228 (8 bits); updated on the rising edge of clk; next value depends on din, stage_register_227
+- stage_register_229 (8 bits); updated on the rising edge of clk; next value depends on din, stage_register_228
+- stage_register_230 (8 bits); updated on the rising edge of clk; next value depends on din, stage_register_229
+- stage_register_231 (8 bits); updated on the rising edge of clk; next value depends on din, stage_register_230
+- stage_register_232 (8 bits); updated on the rising edge of clk; next value depends on din, stage_register_231
+- stage_register_233 (8 bits); updated on the rising edge of clk; next value depends on din, stage_register_232
+- stage_register_234 (8 bits); updated on the rising edge of clk; next value depends on din, stage_register_233
+- stage_register_235 (8 bits); updated on the rising edge of clk; next value depends on din, stage_register_234
+- stage_register_236 (8 bits); updated on the rising edge of clk; next value depends on din, stage_register_235
+- stage_register_237 (8 bits); updated on the rising edge of clk; next value depends on din, stage_register_236
+- stage_register_238 (8 bits); updated on the rising edge of clk; next value depends on din, stage_register_237
+- stage_register_239 (8 bits); updated on the rising edge of clk; next value depends on din, stage_register_238
+- stage_register_240 (8 bits); updated on the rising edge of clk; next value depends on din, stage_register_239
+- stage_register_241 (8 bits); updated on the rising edge of clk; next value depends on din, stage_register_240
+- stage_register_242 (8 bits); updated on the rising edge of clk; next value depends on din, stage_register_241
+- stage_register_243 (8 bits); updated on the rising edge of clk; next value depends on din, stage_register_242
+- stage_register_244 (8 bits); updated on the rising edge of clk; next value depends on din, stage_register_243
+- stage_register_245 (8 bits); updated on the rising edge of clk; next value depends on din, stage_register_244
+- stage_register_246 (8 bits); updated on the rising edge of clk; next value depends on din, stage_register_245
+- stage_register_247 (8 bits); updated on the rising edge of clk; next value depends on din, stage_register_246
+- stage_register_248 (8 bits); updated on the rising edge of clk; next value depends on din, stage_register_247
+- stage_register_249 (8 bits); updated on the rising edge of clk; next value depends on din, stage_register_248
+- stage_register_250 (8 bits); updated on the rising edge of clk; next value depends on din, stage_register_249
+- stage_register_251 (8 bits); updated on the rising edge of clk; next value depends on din, stage_register_250
+- stage_register_252 (8 bits); updated on the rising edge of clk; next value depends on din, stage_register_251
+- stage_register_253 (8 bits); updated on the rising edge of clk; next value depends on din, stage_register_252
+- stage_register_254 (8 bits); updated on the rising edge of clk; next value depends on din, stage_register_253
+- stage_register_255 (8 bits); updated on the rising edge of clk; next value depends on din, stage_register_254
+- stage_register_256 (8 bits); updated on the rising edge of clk; next value depends on din, stage_register_255
+- stage_register_257 (8 bits); updated on the rising edge of clk; next value depends on din, stage_register_256
+- stage_register_258 (8 bits); updated on the rising edge of clk; next value depends on din, stage_register_257
+- stage_register_259 (8 bits); updated on the rising edge of clk; next value depends on din, stage_register_258
+- stage_register_260 (8 bits); updated on the rising edge of clk; next value depends on din, stage_register_259
+- stage_register_261 (8 bits); updated on the rising edge of clk; next value depends on din, stage_register_260
+- stage_register_262 (8 bits); updated on the rising edge of clk; next value depends on din, stage_register_261
+- stage_register_263 (8 bits); updated on the rising edge of clk; next value depends on din, stage_register_262
+- stage_register_264 (8 bits); updated on the rising edge of clk; next value depends on din, stage_register_263
+- stage_register_265 (8 bits); updated on the rising edge of clk; next value depends on din, stage_register_264
+- stage_register_266 (8 bits); updated on the rising edge of clk; next value depends on din, stage_register_265
+- stage_register_267 (8 bits); updated on the rising edge of clk; next value depends on din, stage_register_266
+- stage_register_268 (8 bits); updated on the rising edge of clk; next value depends on din, stage_register_267
+- stage_register_269 (8 bits); updated on the rising edge of clk; next value depends on din, stage_register_268
+- stage_register_270 (8 bits); updated on the rising edge of clk; next value depends on din, stage_register_269
+- stage_register_271 (8 bits); updated on the rising edge of clk; next value depends on din, stage_register_270
+- stage_register_272 (8 bits); updated on the rising edge of clk; next value depends on din, stage_register_271
+- stage_register_273 (8 bits); updated on the rising edge of clk; next value depends on din, stage_register_272
+- stage_register_274 (8 bits); updated on the rising edge of clk; next value depends on din, stage_register_273
+- stage_register_275 (8 bits); updated on the rising edge of clk; next value depends on din, stage_register_274
+- stage_register_276 (8 bits); updated on the rising edge of clk; next value depends on din, stage_register_275
+- stage_register_277 (8 bits); updated on the rising edge of clk; next value depends on din, stage_register_276
+- stage_register_278 (8 bits); updated on the rising edge of clk; next value depends on din, stage_register_277
+- stage_register_279 (8 bits); updated on the rising edge of clk; next value depends on din, stage_register_278
+- stage_register_280 (8 bits); updated on the rising edge of clk; next value depends on din, stage_register_279
+[truncated: Registers 282/301 records]
+
+## Combinational logic
+[truncated: Combinational logic 0/1 records]
+
+## State machines
+FSM 1: state register st (2 bits); status confirmed; quality high; one-process; encoding binary
+Timing: clock clk, rising edge; reset rst_n (async) to IDLE; enabled by go; implicit hold
+States: IDLE = 0 (reset), RUN = 1, DONE = 2
+Reachability from the reset state: known (transition graph only)
+Output st: moore, registered; updated at the clock edge from go
+Transitions:
+- IDLE -> RUN when go is 1
+- RUN -> DONE when go is 0
+- DONE -> IDLE
+- IDLE -> IDLE when go is 0 (holds) (priority unknown)
+- RUN -> RUN when go is 1 (holds) (priority unknown)

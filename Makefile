@@ -28,7 +28,7 @@ DATASET_DIR ?= $(DATA_ROOT)/datasets/pipeline
 CURATED_DIR ?=
 PROJECT ?= $(NORMALIZED_DIR)
 
-.PHONY: help venv setup test test-data check-layout check-leakage check-provenance check-stale clean-stale check-manifest check-semantic check-behavior behavior check-structural structural check-fsm fsm data-quality compile pipeline headers git_sync clean
+.PHONY: help venv setup test test-data check-layout check-leakage check-provenance check-stale clean-stale check-manifest check-semantic check-behavior behavior check-structural structural check-fsm fsm prompt-v2 check-prompt-v2 check-compat data-quality compile pipeline headers git_sync clean
 
 help:
 	@echo "Kritva Forge targets:"
@@ -48,7 +48,10 @@ help:
 	@echo "  make check-structural - validate the Structural Analysis v1 corpus (references, provenance, leakage)"
 	@echo "  make fsm            - regenerate FSM Analysis v2 from Semantic IR v2 + Behavioral Semantics v1 + Structural Analysis v1"
 	@echo "  make check-fsm      - validate the FSM Analysis v2 corpus (identities, references, encoding, leakage)"
-	@echo "  make data-quality - test-data + layout + leakage + provenance + semantic + behavior + structural + fsm + stale + manifest gates"
+	@echo "  make prompt-v2       - regenerate Prompt v2 (generated/prompt/v2) from the four analysis layers"
+	@echo "  make check-prompt-v2 - validate Prompt v2 (provenance, abstraction, leakage, size, classification, reports)"
+	@echo "  make check-compat    - cross-repository version compatibility (forge requirements vs data versions)"
+	@echo "  make data-quality - test-data + layout + leakage + provenance + semantic + behavior + structural + fsm + prompt-v2 + stale + manifest + compat gates"
 	@echo "  make compile     - syntax-check Python sources"
 	@echo "  make headers     - validate KritvaOS source headers"
 	@echo "  make pipeline    - parse RTL and generate normalized IR/datasets"
@@ -120,7 +123,16 @@ fsm: setup
 check-fsm: setup
 	PYTHONPATH=. $(PYTHON) scripts/fsm/validator.py --check --data-root "$(DATA_ROOT)"
 
-data-quality: test-data check-layout check-leakage check-provenance check-semantic check-behavior check-structural check-fsm check-stale check-manifest
+prompt-v2: setup
+	PYTHONPATH=. $(PYTHON) scripts/prompt_v2/render.py --write --data-root "$(DATA_ROOT)"
+
+check-prompt-v2: setup
+	PYTHONPATH=. $(PYTHON) scripts/prompt_v2/validator.py --check --with-classification --reports --data-root "$(DATA_ROOT)"
+
+check-compat: setup
+	PYTHONPATH=. $(PYTHON) scripts/core/compat.py --data-root "$(DATA_ROOT)"
+
+data-quality: test-data check-layout check-leakage check-provenance check-semantic check-behavior check-structural check-fsm check-prompt-v2 check-stale check-manifest check-compat
 
 headers:
 	python3 scripts/lint/check_source_headers.py --mode tracked --strict

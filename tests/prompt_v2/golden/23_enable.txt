@@ -1,0 +1,32 @@
+Write synthesizable Verilog/SystemVerilog RTL for the hardware module specified below. The specification describes behavior and structure, not source code.
+
+## Module
+Name: g25
+Ports:
+- clk: input, 1 bit
+- rst_n: input, 1 bit
+- en: input, 1 bit
+- go: input, 1 bit
+- st: output, 2 bits
+
+## Clocks and resets
+- clock clk, rising edge
+- reset rst_n: async, active low
+
+## Registers
+- st (2 bits); updated on the rising edge of clk; reset by rst_n to I; controlled by en, go; otherwise holds its value (implicit hold)
+
+## State machines
+FSM 1: state register st (2 bits); status confirmed; quality high; one-process; encoding binary
+Timing: clock clk, rising edge; reset rst_n (async) to I; enabled by go; implicit hold
+States: I = 0 (reset), A = 1, B = 2
+Reachability from the reset state: known (transition graph only)
+Output st: moore, registered; updated at the clock edge from en, go
+Transitions:
+- I -> A when en is 1 and go is 1
+- A -> B when en is 1
+- B -> I when en is 1
+- I -> I when en is 0 (holds) [derived] (priority unknown)
+- A -> A when en is 0 (holds) [derived] (priority unknown)
+- B -> B when en is 0 (holds) [derived] (priority unknown)
+- I -> I when en is 1 and go is 0 (holds) (priority unknown)

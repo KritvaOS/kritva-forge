@@ -1,0 +1,29 @@
+Write synthesizable Verilog/SystemVerilog RTL for the hardware module specified below. The specification describes behavior and structure, not source code.
+
+## Module
+Name: g23
+Ports:
+- clk: input, 1 bit
+- rst_n: input, 1 bit
+- go: input, 1 bit
+- st: output, 2 bits
+
+## Clocks and resets
+- clock clk, rising edge
+- reset rst_n: async, active low
+
+## Registers
+- st (2 bits); updated on the rising edge of clk; reset by rst_n to A; controlled by go; otherwise holds its value (implicit hold)
+
+## State machines
+FSM 1: state register st (2 bits); status confirmed; quality high; one-process; encoding gray
+Timing: clock clk, rising edge; reset rst_n (async) to A; enabled by go; implicit hold
+States: A = 0 (reset), B = 1, C = 2 (unreachable in the transition graph), Z = 3 (unreachable in the transition graph)
+Reachability from the reset state: known (transition graph only)
+Output st: moore, registered; updated at the clock edge from go
+Transitions:
+- A -> B when go is 1
+- B -> A
+- Z -> C
+- C -> A
+- A -> A when go is 0 (holds) (priority unknown)

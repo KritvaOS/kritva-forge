@@ -1,0 +1,34 @@
+Write synthesizable Verilog/SystemVerilog RTL for the hardware module specified below. The specification describes behavior and structure, not source code.
+
+## Module
+Name: t02
+Ports:
+- clk: input, 1 bit
+- rst_n: input, 1 bit
+- go: input, 1 bit
+- halt: input, 1 bit
+- busy: output, 1 bit
+
+## Clocks and resets
+- clock clk, rising edge
+- reset rst_n: async, active low
+
+## Registers
+- cs (2 bits); updated on the rising edge of clk; reset by rst_n to A; next value depends on ns
+
+## Combinational logic
+- ns depends on constants only; selected by cs, go, halt
+- busy (continuous) depends on A, cs
+
+## State machines
+FSM 1: state register cs (2 bits); status confirmed; quality high; two-process; encoding binary
+Timing: clock clk, rising edge; reset rst_n (async) to A
+States: A = 0 (reset), B = 1, C = 2
+Reachability from the reset state: known (transition graph only)
+Output busy: moore
+Transitions:
+- B -> A when halt is 1 [derived]
+- A -> A when go is 0
+- B -> C when halt is 0 [derived]
+- A -> B when go is 1
+- C -> A [derived]

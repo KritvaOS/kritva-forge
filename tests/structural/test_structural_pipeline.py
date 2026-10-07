@@ -169,7 +169,7 @@ def test_split_change_makes_report_stale(tree):
 # ----------------------------------------------------------------------------- data manifest v4+ (AC-050, AC-051)
 def test_manifest_references_structure(built):
     m = json.loads((built.root / DM.MANIFEST_PATH).read_text())
-    assert m["schema"] == {"name": "kritva-forge-data-manifest", "version": 5}
+    assert m["schema"] == {"name": "kritva-forge-data-manifest", "version": 6}
     assert (m["versions"]["structural"], m["versions"]["structural_identity"], m["versions"]["structural_analyzer"]) == (1, 1, 1)
     arts = {a["path"]: a for a in m["artifacts"]}
     for mod in m["modules"]:

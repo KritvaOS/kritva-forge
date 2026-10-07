@@ -1,0 +1,32 @@
+Write synthesizable Verilog/SystemVerilog RTL for the hardware module specified below. The specification describes behavior and structure, not source code.
+
+## Module
+Name: g13
+Ports:
+- clk: input, 1 bit
+- rst_n: input, 1 bit
+- load: input, 1 bit
+- din: input, 2 bits
+- st: output, 2 bits
+
+## Clocks and resets
+- clock clk, rising edge
+- reset rst_n: async, active low
+
+## Registers
+- st (2 bits); updated on the rising edge of clk; reset by rst_n to S0; next value depends on din; controlled by load
+
+## State machines
+FSM 1: state register st (2 bits); status confirmed; quality medium; one-process; encoding binary
+Timing: clock clk, rising edge; reset rst_n (async) to S0
+States: S0 = 0 (reset), S1 = 1, S2 = 2
+Reachability from the reset state: unknown
+Output st: moore, registered; updated at the clock edge from din, load
+Uncertain: unknown target
+Transitions:
+- S0 -> an unknown state when load is 1 [derived]
+- S2 -> an unknown state when load is 1 [derived]
+- S1 -> an unknown state when load is 1 [derived]
+- S0 -> S1 when load is 0
+- S1 -> S2 when load is 0
+- S2 -> S0 when load is 0 (default) [derived]

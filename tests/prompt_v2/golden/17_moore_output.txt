@@ -1,0 +1,35 @@
+Write synthesizable Verilog/SystemVerilog RTL for the hardware module specified below. The specification describes behavior and structure, not source code.
+
+## Module
+Name: g22
+Parameters:
+- OFF, default 0
+- ON, default 1
+- ERR, default 2
+Ports:
+- clk: input, 1 bit
+- rst_n: input, 1 bit
+- e: input, 1 bit
+- f: input, 1 bit
+- m: output, 2 bits
+
+## Clocks and resets
+- clock clk, rising edge
+- reset rst_n: async, active low
+
+## Registers
+- m (2 bits); updated on the rising edge of clk; reset by rst_n to OFF; controlled by e, f; otherwise holds its value (implicit hold)
+
+## State machines
+FSM 1: state register m (2 bits); status confirmed; quality high; one-process; encoding binary
+Timing: clock clk, rising edge; reset rst_n (async) to OFF; enabled by e; implicit hold
+States: OFF = 0 (reset), ON = 1, ERR = 2
+Reachability from the reset state: known (transition graph only)
+Output m: moore, registered; updated at the clock edge from e, f
+Transitions:
+- OFF -> ON when e is 1
+- ON -> ERR when f is 1
+- ON -> OFF when f is 0 and e is 0
+- ERR -> ERR
+- ON -> ON when f is 0 and e is 1 (holds) (priority unknown)
+- OFF -> OFF when e is 0 (holds) (priority unknown)

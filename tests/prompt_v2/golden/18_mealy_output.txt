@@ -1,0 +1,34 @@
+Write synthesizable Verilog/SystemVerilog RTL for the hardware module specified below. The specification describes behavior and structure, not source code.
+
+## Module
+Name: g20
+Ports:
+- clk: input, 1 bit
+- rst_n: input, 1 bit
+- x: input, 1 bit
+- z: output, 1 bit
+
+## Clocks and resets
+- clock clk, rising edge
+- reset rst_n: async, active low
+
+## Registers
+- cs (1 bit); updated on the rising edge of clk; reset by rst_n to S0; next value depends on ns
+
+## Combinational logic
+- ns depends on cs; selected by cs, x
+- z depends on x; selected by cs
+
+## State machines
+FSM 1: state register cs (1 bit); status confirmed; quality high; two-process; encoding binary
+Timing: clock clk, rising edge; reset rst_n (async) to S0; implicit hold
+States: S0 = 0 (reset), S1 = 1
+Reachability from the reset state: known (transition graph only)
+Output z: mealy, also depends on x
+Transitions:
+- S0 -> S0 (holds) [derived]
+- S1 -> S1 (holds) [derived]
+- S0 -> S1 when x is 1
+- S1 -> S0 when x is 0
+Actions:
+- in S1: z is assigned (output)
