@@ -1761,6 +1761,77 @@ The manifest is derived from canonical inputs, KF-DQ-005 provenance and the KF-D
 
 The pipeline writes and validates the manifest after the provenance and stale-artifact gates, writes `analysis/reports/data_manifest_report.json`, and fails on any problem. `KRITVA_FORGE_ALLOW_STALE` does not bypass this gate. `make data-quality` runs every gate.
 
+## 11.5 Open-Source Reference Corpus (KF-DQ-012.2)
+
+**Purpose.** A public regression corpus. The full pipeline and every gate
+run on it without the private `kritva-forge-data` repository. It
+complements the private corpus and never replaces it: the private corpus
+stays authoritative for datasets, splits and published baselines.
+
+**Sources.** Five Apache-2.0 repositories, pinned as git submodules under
+`reference/sources/`:
+
+| IP | Submodule | Pinned commit |
+|---|---|---|
+| `aes` | `security_core` | `de2e6a5` |
+| `fpu` | `fpu` | `621d988` |
+| `qspi` | `qspim` | `55f8c43` |
+| `rtc` | `rtc` | `48943b7` |
+| `ycr1` | `ycr1cr` | `a6c76b3` |
+
+`ycr1` is not the private ycr2-based `yifive` IP. The public heads differ
+from the private corpus files, so the reference corpus has its own
+baseline.
+
+**Contract.** `reference/corpus.yaml` (schema
+`kritva-forge-reference-corpus` v1) is the single source of truth. Per IP
+it declares:
+- the submodule, repository, pinned commit and license;
+- the source root and an explicit file list (no discovery);
+- include directories;
+- exclusions, each with a reason;
+- documented external includes.
+
+**Materialization.** `scripts/reference/materialize.py` builds
+`build/reference/kritva-forge-data` (gitignored) from scratch. It writes
+byte-identical copies and one `files.f` per IP.
+- It refuses missing, dirty or wrongly-pinned submodules, missing listed
+  files, and any unresolved `` `include `` that is not documented.
+  Example: `qspim_top.sv` is excluded because it needs the parent SoC's
+  `user_reg_map.svh`; no RTL is ever fabricated.
+- It never writes into `reference/sources`.
+- The evidence manifest `reference_manifest.json` and the marker
+  `CORPUS_KIND` (`reference`) go beside the data root, not inside it,
+  because the KF-DQ-006 stale gate treats other root files as UNMANAGED.
+
+**Regression.** `make reference-regression` runs the production entry
+points with `DATA_ROOT` set to the reference root:
+1. `reference-data`;
+2. `pipeline`;
+3. `data-quality`;
+4. compares `scripts/reference/summary.py` output with the committed
+   `reference/expected/summary.json`, and fails on any differing key;
+5. proves every submodule is unchanged.
+
+The summary holds:
+- per-layer counts and tree hashes;
+- gate statuses;
+- Prompt v2 size and leakage statistics;
+- classification counts and split identity.
+
+Corpus tests that assert private-corpus constants skip on a root marked
+`CORPUS_KIND=reference`. `make reference-baseline` is the only way to
+change the baseline, and the change is reviewed in a PR. The reference
+regression is not yet part of the Kritva Forge Gate.
+
+**Baseline (pinned commits).** 5 IPs and 149 modules (aes 25, fpu 15,
+qspi 15, rtc 13, ycr1 81); all gates PASS. Prompt v2:
+- maximum size 32 742 B, 3 truncated;
+- leakage max overlap 0.077, longest run 5;
+- no cross-split groups.
+
+The corpus exposed the Prompt v2 select-name defect fixed in KF-DQ-012.1.
+
 ---
 
 # 12. Private Data Repository

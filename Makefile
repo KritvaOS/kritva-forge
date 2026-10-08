@@ -28,7 +28,7 @@ DATASET_DIR ?= $(DATA_ROOT)/datasets/pipeline
 CURATED_DIR ?=
 PROJECT ?= $(NORMALIZED_DIR)
 
-.PHONY: help venv setup test test-data check-layout check-leakage check-provenance check-stale clean-stale check-manifest check-semantic check-behavior behavior check-structural structural check-fsm fsm prompt-v2 check-prompt-v2 check-compat data-quality compile pipeline headers git_sync clean
+.PHONY: help venv setup test test-data check-layout check-leakage check-provenance check-stale clean-stale check-manifest check-semantic check-behavior behavior check-structural structural check-fsm fsm prompt-v2 check-prompt-v2 check-compat data-quality compile pipeline headers git_sync clean reference-init reference-data reference-regression reference-baseline reference-clean
 
 help:
 	@echo "Kritva Forge targets:"
@@ -57,6 +57,13 @@ help:
 	@echo "  make pipeline    - parse RTL and generate normalized IR/datasets"
 	@echo "  make clean       - remove local Python/test caches only"
 	@echo "  make git_sync    - sync git repo to main"
+	@echo ""
+	@echo "Open-source reference corpus (KF-DQ-012.2; no private data needed):"
+	@echo "  make reference-init       - check out the pinned reference/sources submodules"
+	@echo "  make reference-data       - materialize build/reference/kritva-forge-data from reference/corpus.yaml"
+	@echo "  make reference-regression - reference-data + pipeline + data-quality + compare with reference/expected/summary.json"
+	@echo "  make reference-baseline   - regenerate reference/expected/summary.json (review the diff in a PR)"
+	@echo "  make reference-clean      - remove build/reference"
 	@echo ""
 	@echo "Private data repository:"
 	@echo "  DATA_ROOT=<path>       (default: ../kritva-forge-data)"
@@ -145,6 +152,39 @@ pipeline: setup
 	@echo "[INFO] Reports        : $(REPORT_DIR)"
 	@echo "[INFO] Datasets       : $(DATASET_DIR)"
 	PYTHONPATH=. $(PYTHON) -m scripts.pipeline.run_pipeline 		--rtl-root "$(DATA_DIR)" 		--normalized-root "$(NORMALIZED_DIR)" 		--prompt-root "$(PROMPT_DIR)" 		--reports-root "$(REPORT_DIR)" 		--datasets-root "$(DATASET_DIR)" 		$(if $(CURATED_DIR),--curated-root "$(CURATED_DIR)",)
+
+# -----------------------------------------------------------------------------
+# Open-source reference corpus (KF-DQ-012.2): same entry points, DATA_ROOT = build/reference/kritva-forge-data
+# -----------------------------------------------------------------------------
+REF_OUT := $(CURDIR)/build/reference
+REF_ROOT := $(REF_OUT)/kritva-forge-data
+REF_STATE := $(CURDIR)/build/reference_sources_state.json
+REF_EXPECTED := reference/expected/summary.json
+
+reference-init:
+	git submodule sync -- reference/sources
+	git submodule update --init -- reference/sources
+	git submodule status -- reference/sources
+
+reference-data: setup
+	PYTHONPATH=. $(PYTHON) scripts/reference/materialize.py --out "$(REF_OUT)"
+
+reference-regression: setup
+	PYTHONPATH=. $(PYTHON) scripts/reference/materialize.py --state "$(REF_STATE)"
+	$(MAKE) --no-print-directory reference-data
+	$(MAKE) --no-print-directory pipeline DATA_ROOT="$(REF_ROOT)"
+	$(MAKE) --no-print-directory data-quality DATA_ROOT="$(REF_ROOT)"
+	PYTHONPATH=. $(PYTHON) scripts/reference/summary.py --data-root "$(REF_ROOT)" --compare "$(REF_EXPECTED)"
+	PYTHONPATH=. $(PYTHON) scripts/reference/materialize.py --check-state "$(REF_STATE)"
+
+reference-baseline: setup
+	$(MAKE) --no-print-directory reference-data
+	$(MAKE) --no-print-directory pipeline DATA_ROOT="$(REF_ROOT)"
+	$(MAKE) --no-print-directory data-quality DATA_ROOT="$(REF_ROOT)"
+	PYTHONPATH=. $(PYTHON) scripts/reference/summary.py --data-root "$(REF_ROOT)" --write "$(REF_EXPECTED)"
+
+reference-clean:
+	rm -rf "$(REF_OUT)" "$(REF_STATE)"
 
 # Sync git repo to back to main
 git_sync:

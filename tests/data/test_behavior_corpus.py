@@ -19,6 +19,7 @@ import os
 import pytest
 
 from scripts.behavior import validator as V
+from tests.data.corpus_kind import private_corpus_only
 
 DATA_ROOT = os.environ.get("KRITVA_FORGE_DATA_ROOT")
 pytestmark = pytest.mark.skipif(not DATA_ROOT, reason="KRITVA_FORGE_DATA_ROOT not set")
@@ -30,6 +31,7 @@ def test_corpus_behavior_gate_passes():
     assert report["documents"] == report["canonical_modules"] > 0
 
 
+@private_corpus_only
 def test_corpus_behavioral_coverage():
     t = V.check(DATA_ROOT)["totals"]
     for key in ("role_sequential", "role_combinational", "clocks_confirmed", "resets_async", "resets_sync",

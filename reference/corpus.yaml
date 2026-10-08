@@ -1,0 +1,201 @@
+# =============================================================================
+# Copyright (c) 2026 KritvaOS
+# SPDX-License-Identifier: Apache-2.0
+#
+# File        : corpus.yaml
+# Description : Open-source reference corpus contract - sources, pinned commits, explicit files, exclusions (KF-DQ-012.2)
+#
+# Component   : Kritva Forge
+# Module      : reference
+# Layer       : Test Data
+#
+# Author      : Kritva Forge Team
+# Created     : 02-10-2026
+# =============================================================================
+# Single source of truth of the reference corpus (scripts/reference/corpus.py).
+# Every materialized file is listed explicitly; changing a commit, a file, an
+# include directory or an exclusion requires a reviewed baseline update
+# (make reference-baseline, reference/expected/summary.json).
+schema:
+  name: kritva-forge-reference-corpus
+  version: 1
+ips:
+  # AES-128 cipher / inverse cipher with register interface (security_core)
+  - id: aes
+    submodule: reference/sources/security_core
+    repository: https://github.com/dineshannayya/security_core.git
+    commit: de2e6a5333261f94ef7f14a0c401eb5ced9bed04
+    license: Apache-2.0
+    root: "verilog/rtl"
+    incdirs: []
+    files:
+      - aes128/core/aes_cipher_top.sv
+      - aes128/core/aes_inv_cipher_top.sv
+      - aes128/core/aes_inv_sbox.sv
+      - aes128/core/aes_key_expand_128.sv
+      - aes128/core/aes_rcon.sv
+      - aes128/core/aes_sbox.sv
+      - aes128/top/aes_reg.sv
+      - aes128/top/aes_top.sv
+      - lib/ctech_cells.sv
+      - lib/registers.v
+      - lib/reset_sync.sv
+    exclusions: []
+    external_includes: []
+  # IEEE-754 single / double precision floating point unit
+  - id: fpu
+    submodule: reference/sources/fpu
+    repository: https://github.com/dineshannayya/fpu.git
+    commit: 621d988a3c2cc0be61e74bd29a6fcf4a923308f9
+    license: Apache-2.0
+    root: "verilog/rtl"
+    incdirs: ["."]
+    files:
+      - double_to_float.v
+      - double_to_long.v
+      - float_to_double.v
+      - fpu_dp_add.sv
+      - fpu_dp_div.sv
+      - fpu_dp_mul.sv
+      - fpu_dp_top.sv
+      - fpu_parms.v
+      - fpu_sp_add.sv
+      - fpu_sp_div.sv
+      - fpu_sp_f2i.sv
+      - fpu_sp_i2f.sv
+      - fpu_sp_mul.sv
+      - fpu_sp_top.sv
+      - fpu_top.sv
+      - long_to_double.v
+    exclusions: []
+    external_includes: []
+  # Quad-SPI master
+  - id: qspi
+    submodule: reference/sources/qspim
+    repository: https://github.com/dineshannayya/qspim.git
+    commit: 55f8c4323611a33a0e01f8066940fb6d76ffa12a
+    license: Apache-2.0
+    root: ""
+    incdirs: []
+    files:
+      - lib/ctech_cells.sv
+      - lib/reset_sync.sv
+      - src/qspim_clkgen.sv
+      - src/qspim_ctrl.sv
+      - src/qspim_fifo.sv
+      - src/qspim_if.sv
+      - src/qspim_regs.sv
+      - src/qspim_rx.sv
+      - src/qspim_tx.sv
+    exclusions:
+      - path: src/qspim_top.sv
+        reason: external_parent_soc_include:user_reg_map.svh
+    external_includes: []
+  # Real-time clock
+  - id: rtc
+    submodule: reference/sources/rtc
+    repository: https://github.com/dineshannayya/rtc.git
+    commit: 48943b7aa6ce9d66fd23db83417a7a097376c21d
+    license: Apache-2.0
+    root: "verilog/rtl"
+    incdirs: []
+    files:
+      - core/rtc_core.sv
+      - core/rtc_reg.sv
+      - core/rtc_top.sv
+      - lib/async_reg_bus.sv
+      - lib/ctech_cells.sv
+      - lib/reset_sync.sv
+    exclusions: []
+    external_includes: []
+  # YCR1 RISC-V core (ycr1cr; not the private ycr2-based yifive IP)
+  - id: ycr1
+    submodule: reference/sources/ycr1cr
+    repository: https://github.com/dineshannayya/ycr1cr.git
+    commit: a6c76b34a44ceee89c3876f67f3761a60540fa00
+    license: Apache-2.0
+    root: "src"
+    incdirs: ["includes"]
+    files:
+      - cache/src/core/dcache_tag_fifo.sv
+      - cache/src/core/dcache_top.sv
+      - cache/src/core/icache_app_fsm.sv
+      - cache/src/core/icache_tag_fifo.sv
+      - cache/src/core/icache_top.sv
+      - cache/src/core/ycr_cache_defs.svh
+      - core/pipeline/ycr_ipic.sv
+      - core/pipeline/ycr_pipe_csr.sv
+      - core/pipeline/ycr_pipe_div.sv
+      - core/pipeline/ycr_pipe_exu.sv
+      - core/pipeline/ycr_pipe_hdu.sv
+      - core/pipeline/ycr_pipe_ialu.sv
+      - core/pipeline/ycr_pipe_idu.sv
+      - core/pipeline/ycr_pipe_ifu.sv
+      - core/pipeline/ycr_pipe_lsu.sv
+      - core/pipeline/ycr_pipe_mprf.sv
+      - core/pipeline/ycr_pipe_mul.sv
+      - core/pipeline/ycr_pipe_tdu.sv
+      - core/pipeline/ycr_pipe_top.sv
+      - core/pipeline/ycr_tracelog.sv
+      - core/primitives/ycr_cg.sv
+      - core/primitives/ycr_reset_cells.sv
+      - core/ycr_clk_ctrl.sv
+      - core/ycr_core_top.sv
+      - core/ycr_dm.sv
+      - core/ycr_dmi.sv
+      - core/ycr_scu.sv
+      - core/ycr_tapc.sv
+      - core/ycr_tapc_shift_reg.sv
+      - core/ycr_tapc_synchronizer.sv
+      - includes/ycr_ahb.svh
+      - includes/ycr_arch_description.svh
+      - includes/ycr_arch_types.svh
+      - includes/ycr_cache_defs.svh
+      - includes/ycr_csr.svh
+      - includes/ycr_dm.svh
+      - includes/ycr_hdu.svh
+      - includes/ycr_ipic.svh
+      - includes/ycr_memif.svh
+      - includes/ycr_riscv_isa_decoding.svh
+      - includes/ycr_scu.svh
+      - includes/ycr_search_ms1.svh
+      - includes/ycr_tapc.svh
+      - includes/ycr_tdu.svh
+      - includes/ycr_wb.svh
+      - lib/async_fifo.sv
+      - lib/ctech_cells.sv
+      - lib/registers.v
+      - lib/sync_fifo.sv
+      - lib/sync_fifo2.sv
+      - lib/ycr_arb.sv
+      - lib/ycr_arb2.sv
+      - lib/ycr_async_wbb.sv
+      - lib/ycr_clk_gate1.sv
+      - lib/ycr_clk_gate2.sv
+      - top/ycr_cclk_ctrl_top.sv
+      - top/ycr_cross_bar.sv
+      - top/ycr_dcache_router.sv
+      - top/ycr_dmem_ahb.sv
+      - top/ycr_dmem_router.sv
+      - top/ycr_dmem_wb.sv
+      - top/ycr_dp_memory.sv
+      - top/ycr_icache_router.sv
+      - top/ycr_iconnect.sv
+      - top/ycr_imem_ahb.sv
+      - top/ycr_imem_router.sv
+      - top/ycr_imem_wb.sv
+      - top/ycr_intf.sv
+      - top/ycr_mem_axi.sv
+      - top/ycr_req_retiming.sv
+      - top/ycr_router.sv
+      - top/ycr_sram_mux.sv
+      - top/ycr_tcm.sv
+      - top/ycr_tcm_router.sv
+      - top/ycr_timer.sv
+      - top/ycr_top_ahb.sv
+      - top/ycr_top_axi.sv
+      - top/ycr_top_wb.sv
+    exclusions: []
+    external_includes:
+      - include: ycr_arch_custom.svh
+        reason: only under `ifdef YCR_ARCH_CUSTOM (not defined); external YCR SDK configuration file

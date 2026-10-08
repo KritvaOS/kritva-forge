@@ -35,6 +35,20 @@ make pipeline DATA_ROOT=/path/to/kritva-forge-data
 The public repository must not contain proprietary RTL, private datasets,
 generated golden corpora, model checkpoints, or restricted training data.
 
+## Open-source reference corpus (KF-DQ-012.2)
+
+For a local regression without the private repository, `reference/` pins five
+open-source Apache-2.0 RTL repositories as git submodules. It materializes
+them into the same layout under `build/reference/kritva-forge-data`:
+
+```bash
+make reference-init
+make reference-regression
+```
+
+It is a separate corpus and does not replace `kritva-forge-data`. See
+`reference/README.md`.
+
 ## Canonical normalized IR layout (KF-DQ-001)
 
 ```text
