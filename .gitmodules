@@ -1,0 +1,15 @@
+[submodule "reference/sources/qspim"]
+	path = reference/sources/qspim
+	url = https://github.com/dineshannayya/qspim.git
+[submodule "reference/sources/rtc"]
+	path = reference/sources/rtc
+	url = https://github.com/dineshannayya/rtc.git
+[submodule "reference/sources/fpu"]
+	path = reference/sources/fpu
+	url = https://github.com/dineshannayya/fpu.git
+[submodule "reference/sources/security_core"]
+	path = reference/sources/security_core
+	url = https://github.com/dineshannayya/security_core.git
+[submodule "reference/sources/ycr1cr"]
+	path = reference/sources/ycr1cr
+	url = https://github.com/dineshannayya/ycr1cr.git

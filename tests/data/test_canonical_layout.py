@@ -36,6 +36,7 @@ from scripts.core.paths import (
     iter_ip_dirs,
     iter_module_yamls,
 )
+from tests.data.corpus_kind import private_corpus_only
 
 DATA_ROOT = os.environ.get("KRITVA_FORGE_DATA_ROOT")
 
@@ -60,6 +61,7 @@ def _load(path):
         return yaml.safe_load(handle) or {}
 
 
+@private_corpus_only
 def test_canonical_ip_count(ir):
     ips = [p.name for p in iter_ip_dirs(ir)]
     assert len(ips) == EXPECTED_IPS, ips
@@ -74,6 +76,7 @@ def test_every_ip_directory_is_canonical(ir):
     assert non_ip == []
 
 
+@private_corpus_only
 def test_canonical_module_count(ir):
     assert len(list(iter_module_yamls(ir))) == EXPECTED_MODULES
 

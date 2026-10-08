@@ -27,6 +27,7 @@ import pytest
 
 from scripts.semantic_ir import model as M
 from scripts.semantic_ir import validator as V
+from tests.data.corpus_kind import private_corpus_only
 
 DATA_ROOT = os.environ.get("KRITVA_FORGE_DATA_ROOT")
 pytestmark = pytest.mark.skipif(not DATA_ROOT, reason="KRITVA_FORGE_DATA_ROOT not set")
@@ -73,7 +74,11 @@ def test_corpus_semantic_gate_passes():
     report = V.check(DATA_ROOT)
     assert report["status"] == "PASS", report["problems"][:10]
     assert report["documents"] == report["canonical_modules"] > 0
-    assert report["totals"].get("unresolved_references", 0) == 0
+
+
+@private_corpus_only
+def test_corpus_has_no_unresolved_references():
+    assert V.check(DATA_ROOT)["totals"].get("unresolved_references", 0) == 0
 
 
 def test_representative_constructs_occur_in_corpus():

@@ -29,6 +29,7 @@ import pytest
 from scripts.fsm import model as F
 from scripts.fsm import validator as V
 from scripts.structural import model as TM
+from tests.data.corpus_kind import private_corpus_only
 
 DATA_ROOT = os.environ.get("KRITVA_FORGE_DATA_ROOT")
 pytestmark = pytest.mark.skipif(not DATA_ROOT, reason="KRITVA_FORGE_DATA_ROOT not set")
@@ -99,11 +100,13 @@ def test_corpus_v1_tree_is_gone():
     assert not (Path(DATA_ROOT) / "normalized" / "fsm" / "v1").exists()
 
 
+@private_corpus_only
 def test_corpus_fsm_counts_unchanged(outputs):
     _, counts = outputs
     assert dict(counts) == EXPECTED
 
 
+@private_corpus_only
 def test_corpus_output_classification(outputs):
     rows, _ = outputs
     assert Counter(o["kind"] for o, _, _ in rows) == EXPECTED_KINDS

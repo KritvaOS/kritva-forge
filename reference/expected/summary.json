@@ -1,0 +1,143 @@
+{
+  "classification": {
+    "groups": 0,
+    "informational": 0,
+    "near_duplicate": 0,
+    "structural_similarity": 0
+  },
+  "gates": {
+    "behavior": "PASS",
+    "compatibility": "PASS",
+    "data_manifest": "PASS",
+    "fsm": "PASS",
+    "prompt_v2": "PASS",
+    "provenance": "PASS",
+    "semantic_ir": "PASS",
+    "split_leakage": "PASS",
+    "stale_artifacts": "PASS",
+    "structural": "PASS"
+  },
+  "ips": {
+    "aes": 25,
+    "fpu": 15,
+    "qspi": 15,
+    "rtc": 13,
+    "ycr1": 81
+  },
+  "layers": {
+    "analysis/reports": {
+      "files": 12,
+      "tree_sha256": "86536eee71ac1d4b419f18dbe5346488be47b41ce05dc57e8da709614b89c934"
+    },
+    "datasets/pipeline": {
+      "files": 8,
+      "tree_sha256": "b8dceab601190aae21ffe0a6ee21553f9cfc4339cce09124342160c12e356446"
+    },
+    "generated/prompt/v2": {
+      "files": 298,
+      "tree_sha256": "a2f97ac0978091dfe0f9cbd3de01bbeb8017c2d6e9d7d8f2b3d13a822429077c"
+    },
+    "generated/prompts": {
+      "files": 149,
+      "tree_sha256": "fcdf29f4c163b5b7fab1b3ee74b3fee2557c70850666377ad62492e055583330"
+    },
+    "manifests": {
+      "files": 3,
+      "tree_sha256": "ee0d7510ecf7aee7c2243cafff7044ec6de74b4dbc7197fbed318872059c29ed"
+    },
+    "normalized/behavior/v1": {
+      "files": 149,
+      "tree_sha256": "6eb82c4d2f5af53f80ef14ad766e7412eb8067be7b241449436cd4d574038fdc"
+    },
+    "normalized/fsm/v2": {
+      "files": 149,
+      "tree_sha256": "a0c5f8ee94f976649c95818257688f7c9a25fd48a72e11f6df486077e63a7b49"
+    },
+    "normalized/ir": {
+      "files": 259,
+      "tree_sha256": "f815e20a4a73bcb82a9a1dbaf078e3bd0d5deeca77884fb20b416b2f11c976b0"
+    },
+    "normalized/semantic_ir/v2": {
+      "files": 149,
+      "tree_sha256": "0ef023414659773676c6df7458ca5de3d85546df9cd97175ca24475db75e21a5"
+    },
+    "normalized/structural/v1": {
+      "files": 149,
+      "tree_sha256": "694324be59a3adae52d3cd02a62c0a4df139b6fd906f7c3fd27039f4d9fd7c25"
+    },
+    "raw/rtl/original": {
+      "files": 125,
+      "tree_sha256": "c9b52b36980cbaef0172147877cac1434954af81abdb0c495ee9fe9c19eda33b"
+    },
+    "splits": {
+      "files": 2,
+      "tree_sha256": "ccff588c3f9b60002758956e25bd67c8c5902162f638ae307d7e453c0c9aff8d"
+    }
+  },
+  "modules": 149,
+  "prompt_v2": {
+    "corpus_sha256": "9b4558843198c5a318a112edd471b8204e4c469c7b4e901bdea50a7e77718e96",
+    "guard_fallbacks": 156,
+    "leakage": {
+      "failures": 0,
+      "longest_run_max": 5,
+      "overlap_max": 0.077348
+    },
+    "prompts": 149,
+    "sidecars": 149,
+    "sizes": {
+      "p100": 32742,
+      "p50": 2158,
+      "p90": 11572,
+      "p99": 32737,
+      "truncated": 3
+    }
+  },
+  "reference_corpus_sha256": "f8b83033e96d0d4cdcba4add1f5c0b592d5f5c2b586008ad01de52b44edb28d9",
+  "schema": {
+    "name": "kritva-forge-reference-summary",
+    "version": 1
+  },
+  "sources": [
+    {
+      "commit": "de2e6a5333261f94ef7f14a0c401eb5ced9bed04",
+      "exclusions": [],
+      "files": 11,
+      "id": "aes"
+    },
+    {
+      "commit": "621d988a3c2cc0be61e74bd29a6fcf4a923308f9",
+      "exclusions": [],
+      "files": 16,
+      "id": "fpu"
+    },
+    {
+      "commit": "55f8c4323611a33a0e01f8066940fb6d76ffa12a",
+      "exclusions": [
+        "src/qspim_top.sv"
+      ],
+      "files": 9,
+      "id": "qspi"
+    },
+    {
+      "commit": "48943b7aa6ce9d66fd23db83417a7a097376c21d",
+      "exclusions": [],
+      "files": 6,
+      "id": "rtc"
+    },
+    {
+      "commit": "a6c76b34a44ceee89c3876f67f3761a60540fa00",
+      "exclusions": [],
+      "files": 78,
+      "id": "ycr1"
+    }
+  ],
+  "splits": {
+    "counts": {
+      "test": 16,
+      "train": 114,
+      "validation": 19
+    },
+    "split_identity": "sp1:afcfd85cce87a78b"
+  }
+}
