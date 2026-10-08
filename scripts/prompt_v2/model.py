@@ -114,6 +114,11 @@ NEGATED = {"is": "is not", "is not": "is", "is less than": "is at least", "is at
 HDL_SYNTAX_RE = re.compile(
     r"(<=|==|!=|&&|\|\||\?|\b(always|always_ff|always_comb|always_latch|assign|begin|endmodule|endcase|"
     r"posedge|negedge)\b)")
+# KF-DQ-012.1: HDL index / part-select / member-of-element syntax ("x[0]", "a[1:0]", "f[0].h") is never prompt text.
+HDL_SELECT_RE = re.compile(r"[A-Za-z0-9_$\]]\[")
+_SEL_IDENT = re.compile(r"[A-Za-z_][A-Za-z0-9_$]*")
+_SEL_INDEX = re.compile(r"\[\s*([A-Za-z0-9_$]+)\s*(?::\s*([A-Za-z0-9_$]+)\s*)?\]")
+_SEL_FIELD = re.compile(r"\.([A-Za-z_][A-Za-z0-9_$]*)")
 PARSER_NOISE_RE = re.compile(r"\b(node_id|syntax_type|BufferID|SyntaxKind|SyntaxNode)\b|\b(offset|buffer)\s*[:=]\s*\d")
 ABS_PATH_RE = re.compile(r"(^|[\s\"'=:(,])(/(home|tmp|mnt|Users|workspace|root|var)/|[A-Za-z]:\\)")
 
@@ -143,6 +148,46 @@ def identity(sidecar: dict) -> str:
 
 def sha256_text(text: str) -> str:
     return hashlib.sha256(text.encode("utf-8")).hexdigest()
+
+
+def select_text(raw):
+    """Natural-language form of an unresolved reference's source text (KF-DQ-012.1).
+
+    Names without an index or part select are returned unchanged (identifiers and
+    dotted member names such as ``hart_runctrl.redirect``).  A name with selects is
+    rendered from the inside out: ``req_fifo[0].haddr[1:0]`` becomes
+    ``bits 1 to 0 of field haddr of element 0 of req_fifo``.  An index becomes
+    ``element N of`` when another select follows it and ``bit N of`` when it is last,
+    matching the resolved-operand wording.  Anything else is ``None`` (the caller
+    renders an unresolved signal); raw HDL text is never returned.
+    """
+    if not isinstance(raw, str) or not raw:
+        return None
+    if "[" not in raw and "]" not in raw:
+        return raw
+    m = _SEL_IDENT.match(raw)
+    if not m:
+        return None
+    out, pos, steps = m.group(0), m.end(), []
+    while pos < len(raw):
+        mi, mf = _SEL_INDEX.match(raw, pos), _SEL_FIELD.match(raw, pos)
+        if mi:
+            steps.append(("range", mi.group(1), mi.group(2)) if mi.group(2) else ("index", mi.group(1), None))
+            pos = mi.end()
+        elif mf:
+            steps.append(("field", mf.group(1), None))
+            pos = mf.end()
+        else:
+            return None
+    for n, (kind, a, b) in enumerate(steps):
+        if kind == "range":
+            out = f"bits {a} to {b} of {out}"
+        elif kind == "field":
+            out = f"field {a} of {out}"
+        else:
+            nxt = steps[n + 1][0] if n + 1 < len(steps) else None
+            out = f"{'element' if nxt else 'bit'} {a} of {out}"
+    return out
 
 
 def width_text(width) -> str:

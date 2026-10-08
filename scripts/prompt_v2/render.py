@@ -119,7 +119,7 @@ class _Lang:
             return None
         op = e.get("op")
         if op == "ref":
-            return self.names.get(e.get("target")) or e.get("name")
+            return self.ref_name(e)
         if op == "literal":
             v = e.get("value")
             return str(v) if isinstance(v, int) and not isinstance(v, bool) else None
@@ -130,6 +130,10 @@ class _Lang:
             b, lo, hi = self.operand(e.get("base")), self.operand(e.get("left")), self.operand(e.get("right"))
             return f"bits {lo} to {hi} of {b}" if b and lo and hi else None
         return None
+
+    def ref_name(self, e):
+        """Declared name of a resolved reference; unresolved source text in natural language (KF-DQ-012.1)."""
+        return self.names.get(e.get("target")) or P.select_text(e.get("name"))
 
     def cond(self, e, neg=False):
         if not isinstance(e, dict):
@@ -160,9 +164,11 @@ class _Lang:
             x = stack.pop()
             if isinstance(x, dict):
                 if x.get("op") == "ref":
-                    n = self.names.get(x.get("target")) or x.get("name")
+                    n = self.ref_name(x)
                     if n:
                         out.add(n)
+                    elif x.get("name"):
+                        out.add("an unresolved signal")
                 stack.extend(v for k, v in x.items() if k != "loc")
             elif isinstance(x, list):
                 stack.extend(x)

@@ -1065,8 +1065,17 @@ Rendering rules:
   source state is absorbed into the transition source. An expression that
   cannot be rendered becomes `a condition on <signals>` and is counted in
   `abstraction.guard_fallbacks`.
+- Unresolved references (Semantic IR `target: null`) are rendered from their
+  source text only when it is a plain or dotted name. Index and part
+  selects are put into words, from the inside out (KF-DQ-012.1):
+  - `req_fifo[0].haddr` becomes `field haddr of element 0 of req_fifo`;
+  - `a[3:0]` becomes `bits 3 to 0 of a`.
+
+  Anything else becomes `an unresolved signal`. Raw source text with
+  selects is never emitted.
 - The prompt never contains HDL operators or keywords (`<=`, `==`, `&&`,
-  `always`, `assign`, ...), source comments, parser metadata (`node_id`,
+  `always`, `assign`, ...), index / select syntax (`x[0]`, rejected as
+  `hdl_syntax`), source comments, parser metadata (`node_id`,
   `SyntaxKind`, offsets) or absolute paths. The validator enforces all of
   these.
 - Uncertainty is never upgraded and uses a fixed vocabulary:

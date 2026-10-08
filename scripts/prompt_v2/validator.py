@@ -96,6 +96,9 @@ def text_problems(text: str) -> list:
     m = P.HDL_SYNTAX_RE.search(text)
     if m:
         p.append(("hdl_syntax", f"HDL syntax {m.group(0)!r} in the prompt"))
+    m = P.HDL_SELECT_RE.search(text)
+    if m:
+        p.append(("hdl_syntax", f"HDL index / select syntax near {text[max(0, m.start() - 20):m.end() + 10]!r}"))
     m = P.PARSER_NOISE_RE.search(text)
     if m:
         p.append(("parser_metadata", f"parser metadata {m.group(0)!r} in the prompt"))
