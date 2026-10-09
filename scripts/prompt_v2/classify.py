@@ -31,6 +31,11 @@ Classification (frozen): ``near_duplicate`` >= 0.70 > ``structural_similarity``
 >= 0.30 > ``informational``.  ``near_duplicate`` groups must be re-split before
 KF-DQ-013 consumes Prompt v2; KF-DQ-012 changes no split.  Prompt content and
 dataset task labels are never used.
+
+Split schema v2 (KF-DQ-013.0, ``scripts/dataset/near_duplicate.py``) reuses
+``fingerprint_index`` / ``SourceTexts`` / ``pair_similarity`` - the one
+``rtl-sim-v1`` implementation - to group every near-duplicate pair before the
+split is assigned, so no ``near_duplicate`` group can cross splits.
 """
 
 from __future__ import annotations
@@ -97,20 +102,17 @@ def _load(root: Path, rel: str) -> dict:
     return json.loads(path.read_text(encoding="utf-8"))
 
 
-def build(data_root) -> dict:
+def fingerprint_index(data_root) -> tuple[dict, dict]:
+    """Per-module Semantic IR identity / source and the Structural / FSM fingerprint groups.
+
+    Returns ``(info, by_fp)``: ``info[(ip, module)] = {"module_id", "source"}`` and
+    ``by_fp[(kind, fingerprint)] = {(ip, module), ...}`` with kind ``structural`` / ``fsm``.
+    Read from the persisted documents of every canonical module (fail closed).  Shared by the
+    cross-split classification and by split schema v2 (KF-DQ-013.0) - one definition.
+    """
     from scripts.prompt_v2.render import canonical_modules, upstream_rel
 
     root = Path(os.path.abspath(data_root))
-    smp = root / SPLIT_MANIFEST
-    if not smp.is_file():
-        raise ClassificationError(f"{SPLIT_MANIFEST} not present")
-    raw = smp.read_bytes()
-    sm = json.loads(raw)
-    split = defaultdict(set)
-    for s in SPLITS:
-        for r in sm.get(s, []):
-            split[(r["ip"], r["module"])].add(s)
-    groups = defaultdict(lambda: {"sources": set(), "fingerprints": set()})
     by_fp = defaultdict(set)
     info = {}
     for ip, module in canonical_modules(root):
@@ -124,6 +126,49 @@ def build(data_root) -> dict:
         for f in fsm.get("fsms", []):
             if f.get("fingerprint"):
                 by_fp[("fsm", f["fingerprint"])].add((ip, module))
+    return info, by_fp
+
+
+class SourceTexts:
+    """Canonical module source texts, located through Semantic IR ``module.source`` (sha256 verified)."""
+
+    def __init__(self, data_root, info: dict):
+        self.root = Path(os.path.abspath(data_root))
+        self.info = info
+        self.texts = {}
+
+    def __call__(self, k) -> str:
+        if k not in self.texts:
+            src = self.info[k]["source"]
+            path = self.root / str(src.get("path"))
+            if not path.is_file():
+                raise ClassificationError(f"{k[0]}/{k[1]}: source {src.get('path')!r} missing")
+            data = path.read_bytes()
+            if hashlib.sha256(data).hexdigest() != src.get("sha256"):
+                raise ClassificationError(f"{k[0]}/{k[1]}: source {src.get('path')} differs from its Semantic IR sha256")
+            self.texts[k] = data.decode("utf-8", errors="replace")
+        return self.texts[k]
+
+
+def pair_similarity(text, a, b) -> float:
+    """``rtl-sim-v1`` similarity of two modules (identical source texts score 1.0)."""
+    ta, tb = text(a), text(b)
+    return 1.0 if ta == tb else similarity(ta, tb)
+
+
+def build(data_root) -> dict:
+    root = Path(os.path.abspath(data_root))
+    smp = root / SPLIT_MANIFEST
+    if not smp.is_file():
+        raise ClassificationError(f"{SPLIT_MANIFEST} not present")
+    raw = smp.read_bytes()
+    sm = json.loads(raw)
+    split = defaultdict(set)
+    for s in SPLITS:
+        for r in sm.get(s, []):
+            split[(r["ip"], r["module"])].add(s)
+    groups = defaultdict(lambda: {"sources": set(), "fingerprints": set()})
+    info, by_fp = fingerprint_index(root)
     for (kind, fp), mods in sorted(by_fp.items()):
         if len({s for k in mods for s in split.get(k, ())}) < 2:
             continue
@@ -131,19 +176,7 @@ def build(data_root) -> dict:
         groups[key]["sources"].add(kind)
         groups[key]["fingerprints"].add(fp)
         groups[key]["members"] = sorted(mods)
-    texts = {}
-
-    def text(k):
-        if k not in texts:
-            src = info[k]["source"]
-            path = root / str(src.get("path"))
-            if not path.is_file():
-                raise ClassificationError(f"{k[0]}/{k[1]}: source {src.get('path')!r} missing")
-            data = path.read_bytes()
-            if hashlib.sha256(data).hexdigest() != src.get("sha256"):
-                raise ClassificationError(f"{k[0]}/{k[1]}: source {src.get('path')} differs from its Semantic IR sha256")
-            texts[k] = data.decode("utf-8", errors="replace")
-        return texts[k]
+    text = SourceTexts(root, info)
 
     out = []
     sims = {}
@@ -154,12 +187,9 @@ def build(data_root) -> dict:
             if split.get(a, set()) == split.get(b, set()):
                 continue                                 # same split: not a cross-split pair
             pk = tuple(sorted((a, b)))
-            if text(a) == text(b):
-                score = 1.0
-            else:
-                if pk not in sims:
-                    sims[pk] = similarity(text(a), text(b))
-                score = sims[pk]
+            if pk not in sims:
+                sims[pk] = pair_similarity(text, a, b)
+            score = sims[pk]
             pairs.append({"a": f"{a[0]}/{a[1]}", "b": f"{b[0]}/{b[1]}", "similarity": round(score, 6)})
         score = max((p["similarity"] for p in pairs), default=0.0)
         cls = classify_score(score)

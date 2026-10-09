@@ -32,6 +32,13 @@ Override it when needed:
 make pipeline DATA_ROOT=/path/to/kritva-forge-data
 ```
 
+Splits use split schema v2 (KF-DQ-013.0). Records are grouped by hard
+content identities, cross-IP `body_shape` copies and `rtl-sim-v1`
+near-duplicate pairs (similarity ≥ 0.70 among modules that share a structural
+or FSM fingerprint). No near-duplicate pair spans two splits; see
+`docs/architecture/architecture.md` §11.1. A data repository written with split
+schema 1 must be regenerated with `make pipeline`.
+
 The public repository must not contain proprietary RTL, private datasets,
 generated golden corpora, model checkpoints, or restricted training data.
 

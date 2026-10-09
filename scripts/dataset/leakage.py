@@ -4,7 +4,7 @@
 # SPDX-License-Identifier: Apache-2.0
 #
 # File        : leakage.py
-# Description : Leakage identity, deterministic split assignment and leakage gate (KF-DQ-004)
+# Description : Leakage identity, deterministic split assignment and leakage gate (KF-DQ-004, split schema v2 KF-DQ-013.0)
 #
 # Component   : Kritva Forge
 # Module      : dataset
@@ -42,14 +42,19 @@ identity            input                                                    cla
 A *leakage group* is a connected component of records that share any hard
 identity.  A hard group must never span two splits.
 
-Split policy (``SPLIT_SCHEMA_VERSION = 1``)
-------------------------------------------
+Split policy (``SPLIT_SCHEMA_VERSION = 2``, KF-DQ-013.0)
+--------------------------------------------------------
 
 1. Records are grouped by hard identities.  In addition, a ``body_shape``
    near-duplicate that occurs in more than one IP (a renamed copy, e.g.
-   ``usb1d_crc16`` / ``usb1bd_crc16``) joins its records into one group;
-   same-IP near-duplicates (e.g. ``aes_sbox`` / ``aes_inv_sbox``, which differ
-   only in table constants) stay soft and are only reported.
+   ``usb1d_crc16`` / ``usb1bd_crc16``) joins its records into one group.
+   Split schema v2 adds the ``rtl-sim-v1`` near-duplicate edges of
+   ``scripts/dataset/near_duplicate.py``: every pair of canonical modules that
+   share a Structural / FSM fingerprint and whose alpha-renamed source
+   similarity is >= 0.70 joins the records of both modules into one group
+   (same-IP and cross-IP alike), so no near-duplicate pair can cross splits.
+   The edges are computed over the whole corpus, independent of the split.
+   ``structural_similarity`` (0.30 .. 0.70) stays soft.
    Groups that span more than one IP are *shared library* groups (for
    example ``ctech_cells.sv``, ``registers.v``, ``reset_sync.sv`` reused by many
    IPs).  They are assigned to ``train`` as a unit.
@@ -62,8 +67,16 @@ Split policy (``SPLIT_SCHEMA_VERSION = 1``)
    with the largest remaining deficit (``target - assigned``); ties resolve
    in the order train, validation, test.
 
-There is no randomness; the assignment depends only on record content and
-IP / module names, never on paths, enumeration order or process state.
+There is no randomness, no pin list and no IP-family table; the assignment
+depends only on record content, IP / module names and the persisted analysis
+documents, never on paths, enumeration order or process state.  Without
+near-duplicate edges, v2 reproduces the v1 assignment exactly.
+
+The split manifest records the edge document (``near_duplicate``) and, per
+group, the edge kinds that joined it (``joined_by``: ``hard``, ``body_shape``,
+``near_duplicate``).  The gate recomputes the edges from the data root and
+fails on an inconsistent edge list, on any edge that spans two splits, on a
+non-reproducible assignment and on any split schema other than 2.
 """
 
 from __future__ import annotations
@@ -77,7 +90,7 @@ import sys
 from collections import defaultdict
 
 LEAKAGE_SCHEMA_VERSION = 1
-SPLIT_SCHEMA_VERSION = 1
+SPLIT_SCHEMA_VERSION = 2
 SPLITS = ("train", "validation", "test")
 SPLIT_RATIOS = {"train": 0.70, "validation": 0.15, "test": 0.15}
 
@@ -86,6 +99,10 @@ SOFT_IDENTITIES = ("body_shape", "module_name")
 INFO_IDENTITIES = ("ip",)
 # Soft identities that become grouping edges when they span IPs.
 CROSS_IP_NEAR_DUPLICATE = ("body_shape",)
+# Split schema v2 (KF-DQ-013.0): rtl-sim-v1 near-duplicate pairs are grouping edges.
+NEAR_DUPLICATE_EDGE = "near_duplicate"
+POLICY = ("hard leakage groups atomic; cross-IP body_shape and rtl-sim-v1 near-duplicate (>= 0.70) pairs "
+          "join groups; cross-IP groups -> train; IP units greedy by deficit")
 
 # IR fields that describe *where* a construct is, not *what* it is.
 IR_LOCATION_FIELDS = frozenset({
@@ -208,12 +225,16 @@ def compute_identities(record: dict, spec: dict, source_text: str) -> dict:
 # Grouping and assignment
 # -----------------------------------------------------------------------------
 
-def build_groups(identities: list[dict], kinds=HARD_IDENTITIES, cross_ip_kinds=()) -> list[dict]:
+def build_groups(identities: list[dict], kinds=HARD_IDENTITIES, cross_ip_kinds=(), edges=()) -> list[dict]:
     """Connected components of records sharing any identity in ``kinds``.
 
     ``cross_ip_kinds`` identities only connect records when the identity
     value occurs in more than one IP (renamed copies across IPs).
-    Returns groups sorted by group_id; each group lists sorted record_ids.
+    ``edges`` are ``((ip, module), (ip, module))`` near-duplicate pairs
+    (split schema v2); each joins every record of both modules.  An edge whose
+    module has no record is ignored here (the gate reports it).
+    Returns groups sorted by group_id; each group lists sorted record_ids and
+    the edge kinds that joined two different components (``joined_by``).
     """
     ordered = sorted(identities, key=lambda i: i["record_id"])
     ips_of = defaultdict(set)
@@ -229,6 +250,14 @@ def build_groups(identities: list[dict], kinds=HARD_IDENTITIES, cross_ip_kinds=(
             x = parent[x]
         return x
 
+    joined = []
+
+    def union(x, y, why):
+        a, b = find(x), find(y)
+        if a != b:
+            parent[max(a, b)] = min(a, b)
+            joined.append((min(a, b), why))
+
     first = {}
     for ident in ordered:
         for kind in (*kinds, *cross_ip_kinds):
@@ -236,16 +265,26 @@ def build_groups(identities: list[dict], kinds=HARD_IDENTITIES, cross_ip_kinds=(
                 continue
             key = (kind, ident[kind])
             if key in first:
-                a, b = find(ident["record_id"]), find(first[key])
-                if a != b:
-                    parent[max(a, b)] = min(a, b)
+                union(ident["record_id"], first[key], "hard" if kind in kinds else kind)
             else:
                 first[key] = ident["record_id"]
+
+    records_of = defaultdict(list)
+    for ident in ordered:
+        records_of[(ident["ip"], ident["module_name"])].append(ident["record_id"])
+    for a, b in sorted(tuple(sorted(e)) for e in edges):
+        ra, rb = records_of.get(tuple(a), []), records_of.get(tuple(b), [])
+        chain = [*ra, *rb]
+        for x, y in zip(chain, chain[1:]):
+            union(x, y, NEAR_DUPLICATE_EDGE)
 
     members = defaultdict(list)
     by_id = {i["record_id"]: i for i in ordered}
     for rid in parent:
         members[find(rid)].append(rid)
+    why = defaultdict(set)
+    for root_id, kind in joined:
+        why[find(root_id)].add(kind)
 
     groups = []
     for rids in members.values():
@@ -255,6 +294,7 @@ def build_groups(identities: list[dict], kinds=HARD_IDENTITIES, cross_ip_kinds=(
             "records": rids,
             "ips": sorted({by_id[r]["ip"] for r in rids}),
             "modules": sorted({by_id[r]["module_name"] for r in rids}),
+            "joined_by": sorted(why[find(rids[0])]),
         })
     return sorted(groups, key=lambda g: g["group_id"])
 
@@ -265,9 +305,14 @@ def split_targets(total: int) -> dict:
     return {"train": total - validation - test, "validation": validation, "test": test}
 
 
-def assign_splits(identities: list[dict]) -> tuple[dict, list[dict]]:
-    """Deterministic leakage-safe assignment. Returns ({record_id: split}, groups)."""
-    groups = build_groups(identities, cross_ip_kinds=CROSS_IP_NEAR_DUPLICATE)
+def assign_splits(identities: list[dict], near_duplicate_edges=()) -> tuple[dict, list[dict]]:
+    """Deterministic leakage-safe assignment. Returns ({record_id: split}, groups).
+
+    ``near_duplicate_edges``: ``((ip, module), (ip, module))`` pairs from
+    ``scripts/dataset/near_duplicate.py`` (split schema v2).  With no edges the
+    result equals the split schema v1 assignment.
+    """
+    groups = build_groups(identities, cross_ip_kinds=CROSS_IP_NEAR_DUPLICATE, edges=near_duplicate_edges)
     assignment = {}
     counts = {s: 0 for s in SPLITS}
 
@@ -298,18 +343,23 @@ def assign_splits(identities: list[dict]) -> tuple[dict, list[dict]]:
 # Manifest and checks
 # -----------------------------------------------------------------------------
 
-def build_manifest(records: list[dict], identities: list[dict], assignment: dict, groups: list[dict]) -> dict:
+def build_manifest(records: list[dict], identities: list[dict], assignment: dict, groups: list[dict],
+                   near_duplicate: dict | None = None) -> dict:
+    """Split manifest; ``near_duplicate`` is the edge document used for the assignment."""
+    from scripts.dataset import near_duplicate as ND
+
     by_id = {i["record_id"]: (r, i) for r, i in zip(records, identities)}
     group_of = {rid: g["group_id"] for g in groups for rid in g["records"]}
     manifest = {
         "split_schema_version": SPLIT_SCHEMA_VERSION,
         "leakage_schema_version": LEAKAGE_SCHEMA_VERSION,
-        "policy": "hard leakage groups atomic; cross-IP groups -> train; IP units greedy by deficit",
+        "policy": POLICY,
         "ratios": SPLIT_RATIOS,
         "hard_identities": list(HARD_IDENTITIES),
         "counts": {s: sum(1 for v in assignment.values() if v == s) for s in SPLITS},
+        "near_duplicate": near_duplicate if near_duplicate is not None else ND.empty(),
         "groups": [
-            {k: g[k] for k in ("group_id", "split", "policy", "ips", "modules", "records")}
+            {k: g[k] for k in ("group_id", "split", "policy", "joined_by", "ips", "modules", "records")}
             for g in groups
         ],
     }
@@ -330,8 +380,16 @@ def build_manifest(records: list[dict], identities: list[dict], assignment: dict
     return manifest
 
 
-def check_leakage(split_identities: dict, manifest: dict | None = None) -> dict:
-    """Leakage gate over {split: [identities]}; returns a report with status PASS/FAIL."""
+def check_leakage(split_identities: dict, manifest: dict | None = None, near_duplicate: dict | None = None) -> dict:
+    """Leakage gate over {split: [identities]}; returns a report with status PASS/FAIL.
+
+    ``near_duplicate`` is the edge document recomputed from the data root
+    (``scripts/dataset/near_duplicate.py``).  When given, the manifest's edge
+    list must equal it; when omitted, the manifest's own edges are used and
+    edge consistency is reported as ``not checked``.
+    """
+    from scripts.dataset import near_duplicate as ND
+
     problems = []
     report = {
         "leakage_schema_version": LEAKAGE_SCHEMA_VERSION,
@@ -349,6 +407,8 @@ def check_leakage(split_identities: dict, manifest: dict | None = None) -> dict:
     ]
     if missing:
         report.update(hard_groups=0, cross_split_hard_groups=0, manifest_status="not checked",
+                      near_duplicate={"edges": 0, "effective_edges": 0, "cross_split_edges": 0,
+                                      "edge_status": "not checked", "classifier": None},
                       manifest_problems=[], determinism_status="not checked",
                       informational={"ip": {"ips": 0, "ips_in_multiple_splits": 0, "names": []}},
                       problems=[f"missing split identities: {len(missing)} record(s)"] + missing[:20],
@@ -388,9 +448,59 @@ def check_leakage(split_identities: dict, manifest: dict | None = None) -> dict:
                                      "names": crossing}
 
     all_idents = [i for s in SPLITS for i in split_identities.get(s, [])]
+    split_of = {i["record_id"]: s for s in SPLITS for i in split_identities.get(s, [])}
+
+    # -- split schema v2: near-duplicate edges (KF-DQ-013.0) --------------------
+    stored_nd = (manifest or {}).get("near_duplicate")
+    nd_problems = ND.validate(stored_nd) if manifest is not None else []
+    if near_duplicate is not None:
+        edge_doc = near_duplicate
+        if manifest is not None and stored_nd != near_duplicate:
+            nd_problems.append("near_duplicate edges inconsistent: the manifest edge list differs from the "
+                               "edges recomputed from the data root")
+        edge_status = "consistent" if not nd_problems else "inconsistent"
+    else:
+        edge_doc = stored_nd if isinstance(stored_nd, dict) else ND.empty()
+        edge_status = "not checked" if not nd_problems else "inconsistent"
+    try:
+        edges = ND.pairs(edge_doc)
+    except ND.NearDuplicateError as exc:
+        nd_problems.append(str(exc))
+        edges = []
+    modules_split = defaultdict(set)
+    for i in all_idents:
+        modules_split[(i["ip"], i["module_name"])].add(split_of[i["record_id"]])
+    unknown = sorted(f"{a[0]}/{a[1]} ~ {b[0]}/{b[1]}" for a, b in edges
+                     if a not in modules_split or b not in modules_split)
+    if unknown:
+        nd_problems.append(f"near_duplicate edges reference modules without records: {unknown[:3]}")
+    crossing_edges = sorted(f"{a[0]}/{a[1]}@{'+'.join(sorted(modules_split[a]))} ~ "
+                            f"{b[0]}/{b[1]}@{'+'.join(sorted(modules_split[b]))}"
+                            for a, b in edges if a in modules_split and b in modules_split
+                            and len(modules_split[a] | modules_split[b]) > 1)
+    if crossing_edges:
+        nd_problems.append(f"{len(crossing_edges)} near_duplicate edge(s) cross splits, e.g. {crossing_edges[:3]}")
+    v1_groups = build_groups(all_idents, cross_ip_kinds=CROSS_IP_NEAR_DUPLICATE)
+    v1_group_of = {r: g["group_id"] for g in v1_groups for r in g["records"]}
+    first_record = {}
+    for i in sorted(all_idents, key=lambda i: i["record_id"]):
+        first_record.setdefault((i["ip"], i["module_name"]), i["record_id"])
+    effective = sum(1 for a, b in edges if a in first_record and b in first_record
+                    and v1_group_of[first_record[a]] != v1_group_of[first_record[b]])
+    report["near_duplicate"] = {
+        "classifier": edge_doc.get("classifier") if isinstance(edge_doc, dict) else None,
+        "threshold": edge_doc.get("threshold") if isinstance(edge_doc, dict) else None,
+        "candidate_pairs": edge_doc.get("candidate_pairs") if isinstance(edge_doc, dict) else None,
+        "edges": len(edges),
+        "effective_edges": effective,
+        "cross_split_edges": len(crossing_edges),
+        "examples": crossing_edges[:5],
+        "edge_status": edge_status,
+    }
+    problems.extend(nd_problems)
+
     groups = build_groups(all_idents)
     report["hard_groups"] = len(groups)
-    split_of = {i["record_id"]: s for s in SPLITS for i in split_identities.get(s, [])}
     crossing_groups = [g for g in groups if len({split_of[r] for r in g["records"]}) > 1]
     report["cross_split_hard_groups"] = len(crossing_groups)
     if crossing_groups:
@@ -398,7 +508,7 @@ def check_leakage(split_identities: dict, manifest: dict | None = None) -> dict:
 
     # Determinism: recomputing the policy from the persisted identities must
     # reproduce the stored assignment exactly.
-    expected, _ = assign_splits(all_idents) if all_idents else ({}, [])
+    expected, _ = assign_splits(all_idents, edges) if all_idents else ({}, [])
     moved = sorted(r for r, s in split_of.items() if expected.get(r) != s)
     report["determinism_status"] = "reproducible" if not moved else f"differs ({len(moved)} records)"
     if moved:
@@ -410,7 +520,8 @@ def check_leakage(split_identities: dict, manifest: dict | None = None) -> dict:
     else:
         mstat = []
         if manifest.get("split_schema_version") != SPLIT_SCHEMA_VERSION:
-            mstat.append("split_schema_version mismatch")
+            mstat.append(f"split_schema_version mismatch: manifest {manifest.get('split_schema_version')!r}, "
+                         f"forge requires {SPLIT_SCHEMA_VERSION} (regenerate the split)")
         if manifest.get("leakage_schema_version") != LEAKAGE_SCHEMA_VERSION:
             mstat.append("leakage_schema_version mismatch")
         for split in SPLITS:
@@ -445,6 +556,10 @@ def format_report(report: dict) -> str:
         lines.append(f"  hard {kind:14s}: {info['groups']} groups, {info['cross_split_groups']} cross-split")
     for kind, info in report["soft"].items():
         lines.append(f"  soft {kind:14s}: {info['groups']} groups, {info['cross_split_groups']} cross-split (reported only)")
+    nd = report.get("near_duplicate") or {}
+    lines.append(f"  near-dup edges      : {nd.get('edges', 0)} ({nd.get('classifier')}; "
+                 f"{nd.get('effective_edges', 0)} effective, {nd.get('cross_split_edges', 0)} cross-split; "
+                 f"edge list {nd.get('edge_status')})")
     ip = report["informational"]["ip"]
     lines.append(f"  info ip             : {ip['ips_in_multiple_splits']} of {ip['ips']} IPs span splits (shared library)")
     lines.append(f"  manifest status     : {report['manifest_status']}")
@@ -494,7 +609,14 @@ def main(argv=None) -> int:
     data = ForgeDataPaths.from_root(args.data_root)
     manifest_path = data.splits / "split_manifest.json"
     manifest = json.loads(manifest_path.read_text()) if manifest_path.exists() else None
-    report = check_leakage(load_split_identities(args.data_root), manifest)
+    from scripts.dataset import near_duplicate as ND
+
+    try:
+        edges = ND.compute(args.data_root)
+    except ND.NearDuplicateError as exc:
+        print(f"Split leakage check: FAIL\n  [FAIL] near-duplicate edges cannot be computed: {exc}")
+        return 1
+    report = check_leakage(load_split_identities(args.data_root), manifest, edges)
     print(format_report(report))
     if args.report:
         with open(args.report, "w", encoding="utf-8") as handle:

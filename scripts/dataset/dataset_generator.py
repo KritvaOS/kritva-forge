@@ -72,6 +72,10 @@ from scripts.dataset.leakage import (
     compute_identities,
     format_report,
 )
+from scripts.dataset.near_duplicate import (
+    compute as compute_near_duplicate_edges,
+    pairs as near_duplicate_pairs,
+)
 from scripts.core.provenance import (
     record_provenance,
     sha256_file,
@@ -1039,7 +1043,8 @@ def generate_datasets(
         prompt_root=None,
         curated_root=None,
         splits_root=None,
-        reports_root=None):
+        reports_root=None,
+        data_root=None):
 
     os.makedirs(
         out_dir,
@@ -1081,8 +1086,24 @@ def generate_datasets(
         for ex in candidates
     ]
 
+    #
+    # KF-DQ-013.0: split schema v2 - rtl-sim-v1 near-duplicate pairs over the
+    # whole corpus (split-independent) are grouping edges.  They are computed
+    # from the persisted Semantic IR / structural / FSM documents of the data
+    # repository; without a data root no split is produced (fail closed).
+    #
+    if data_root is None:
+        data_root = infer_data_root(yaml_root)
+    if data_root is None:
+        raise ValueError(
+            f"cannot determine the data-repository root for {yaml_root}; "
+            "split schema v2 needs it for the near-duplicate edges (KF-DQ-013.0)"
+        )
+    near_duplicate = compute_near_duplicate_edges(data_root)
+
     assignment, groups = assign_splits(
-        identities
+        identities,
+        near_duplicate_pairs(near_duplicate)
     )
 
     by_split = {
@@ -1102,7 +1123,8 @@ def generate_datasets(
         candidates,
         identities,
         assignment,
-        groups
+        groups,
+        near_duplicate
     )
 
     leakage_report = check_leakage(
@@ -1110,7 +1132,8 @@ def generate_datasets(
             split: [ex["_leakage"] for ex in by_split[split]]
             for split in SPLITS
         },
-        split_manifest
+        split_manifest,
+        near_duplicate
     )
 
     print(format_report(leakage_report))
@@ -1119,11 +1142,9 @@ def generate_datasets(
         ex.pop("_leakage", None)
 
     if splits_root is None or reports_root is None:
-        data_root = infer_data_root(yaml_root)
-        if data_root is not None:
-            data = ForgeDataPaths.from_root(data_root)
-            splits_root = splits_root or str(data.splits)
-            reports_root = reports_root or str(data.reports)
+        data = ForgeDataPaths.from_root(data_root)
+        splits_root = splits_root or str(data.splits)
+        reports_root = reports_root or str(data.reports)
 
     if splits_root:
         os.makedirs(splits_root, exist_ok=True)
