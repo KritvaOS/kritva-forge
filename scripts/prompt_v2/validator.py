@@ -244,17 +244,56 @@ def corpus_sha256(data_root) -> str:
     return h.hexdigest()
 
 
-def consumption(data_root) -> list:
-    """KF-DQ-013 boundary (AC-030, AC-648, AC-785): no dataset record may consume Prompt v2 yet."""
+# KF-DQ-013 AC-046: the only records allowed to consume Prompt v2
+MULTITASK_CONSUMERS = {("rtl_generation", 2), ("rtl_understanding", 1)}
+
+
+def consumption(data_root, entry=None) -> list:
+    """Prompt v2 consumption boundary (KF-DQ-012 AC-030 / AC-648 / AC-785, KF-DQ-013 AC-046 / AC-047).
+
+    Legacy ``datasets/pipeline`` records may never consume Prompt v2.  In the
+    multi-task dataset ``datasets/multitask/v2`` only ``rtl_generation`` v2 and
+    ``rtl_understanding`` v1 records may, and only while the entry
+    authorization holds for the current data (``kf_dq_013_entry`` = ``open``,
+    recomputed unless ``entry`` is given).
+    """
     from scripts.core.provenance import iter_dataset_records
+    from scripts.multitask import registry as MG
     root = Path(os.path.abspath(data_root))
     problems = []
     for split, _, rec in iter_dataset_records(root):
         variant = str(rec.get("prompt_variant") or "")
         prov = rec.get("provenance") or {}
         if "prompt_v2" in prov or any(v in variant for v in P.VARIANTS) or P.OUTPUT_DIR in json.dumps(prov):
-            problems.append(("consumption", f"record {prov.get('record_id')} ({split}) consumes Prompt v2 before "
-                                            "KF-DQ-013"))
+            problems.append(("consumption", f"legacy record {prov.get('record_id')} ({split}) consumes Prompt v2 "
+                                            "(only datasets/multitask/v2 may)"))
+    consumers = 0
+    for split in MG.SPLITS:
+        path = root / f"{MG.OUTPUT_DIR}/{split}.jsonl"
+        for n, line in enumerate(path.read_text(encoding="utf-8").splitlines() if path.is_file() else [], 1):
+            try:
+                rec = json.loads(line)
+            except ValueError:
+                continue
+            uses = any(str(s.get("layer", "")).startswith("prompt_v2") for s in rec.get("sources", []) or []) \
+                or P.OUTPUT_DIR in json.dumps(rec.get("sources"))
+            if not uses:
+                continue
+            task = rec.get("task") or {}
+            if (task.get("id"), task.get("version")) not in MULTITASK_CONSUMERS:
+                problems.append(("consumption", f"{MG.OUTPUT_DIR}/{split}.jsonl:{n}: task {task.get('id')} "
+                                                f"v{task.get('version')} may not consume Prompt v2"))
+            consumers += 1
+    if consumers:
+        if entry is None:
+            from scripts.prompt_v2 import classify as PC
+            try:
+                entry = PC.build(root)["kf_dq_013_entry"]
+            except PC.ClassificationError as exc:
+                entry = f"not evaluable ({exc})"
+        if entry != "open":
+            problems.append(("consumption", f"{consumers} multi-task records consume Prompt v2 but the KF-DQ-013 "
+                                            f"entry authorization does not hold (kf_dq_013_entry {entry!r})"))
     return problems
 
 
@@ -340,8 +379,8 @@ def check(data_root, with_classification: bool = False) -> dict:
             fsm["section_truncated"] += 1 if f.get("section_truncated") else 0
             for q, n in (f.get("quality") or {}).items():
                 fsm[f"quality_{q}"] += n
-    problems += consumption(root)
     classification = {"status": "SKIPPED"}
+    entry = None
     if with_classification:
         from scripts.prompt_v2 import classify as PC
         try:
@@ -351,9 +390,11 @@ def check(data_root, with_classification: bool = False) -> dict:
                               **rep["counts"], "unresolved_near_duplicates": rep["unresolved_near_duplicates"],
                               "kf_dq_013_entry": rep["kf_dq_013_entry"]}
             problems += [("report", f"classification: {b}") for b in bad]
+            entry = rep["kf_dq_013_entry"]
         except PC.ClassificationError as exc:
             classification = {"status": "FAIL", "reason": str(exc)}
             problems.append(("report", f"classification refused: {exc}"))
+    problems += consumption(root, entry)
     codes = Counter(c for c, _ in problems)
     n = len(canonical) * len(P.VARIANTS)
     return {

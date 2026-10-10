@@ -1,0 +1,89 @@
+{
+  "module": "wrap",
+  "parameters": [
+    {
+      "default_text": "8",
+      "name": "W",
+      "port_param": true,
+      "signed": false,
+      "type": null,
+      "width": null
+    }
+  ],
+  "ports": [
+    {
+      "direction": "input",
+      "kind": "net",
+      "name": "clk",
+      "packed": [],
+      "signed": false,
+      "type": null,
+      "unpacked": [],
+      "width": 1
+    },
+    {
+      "direction": "input",
+      "kind": "net",
+      "name": "rst_n",
+      "packed": [],
+      "signed": false,
+      "type": null,
+      "unpacked": [],
+      "width": 1
+    },
+    {
+      "direction": "input",
+      "kind": "net",
+      "name": "go",
+      "packed": [],
+      "signed": false,
+      "type": null,
+      "unpacked": [],
+      "width": 1
+    },
+    {
+      "direction": "input",
+      "kind": "net",
+      "name": "din",
+      "packed": [
+        "[W-1:0]"
+      ],
+      "signed": false,
+      "type": null,
+      "unpacked": [],
+      "width": 8
+    },
+    {
+      "direction": "output",
+      "kind": "net",
+      "name": "busy",
+      "packed": [],
+      "signed": false,
+      "type": null,
+      "unpacked": [],
+      "width": 1
+    },
+    {
+      "direction": "output",
+      "kind": "net",
+      "name": "done",
+      "packed": [],
+      "signed": false,
+      "type": null,
+      "unpacked": [],
+      "width": 1
+    },
+    {
+      "direction": "output",
+      "kind": "variable",
+      "name": "q",
+      "packed": [
+        "[W-1:0]"
+      ],
+      "signed": false,
+      "type": "reg",
+      "unpacked": [],
+      "width": 8
+    }
+  ]
+}

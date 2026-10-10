@@ -1,0 +1,70 @@
+{
+  "counts": {
+    "dependencies": 4,
+    "instances": 1,
+    "processes": 1,
+    "registers": 1,
+    "signals": 7
+  },
+  "instances": [
+    {
+      "connections": [
+        {
+          "direction": "input",
+          "port": "rst_n",
+          "signals": [
+            "rst_n"
+          ]
+        },
+        {
+          "direction": "input",
+          "port": "go",
+          "signals": [
+            "go"
+          ]
+        },
+        {
+          "direction": "output",
+          "port": "done",
+          "signals": [
+            "done"
+          ]
+        },
+        {
+          "direction": "input",
+          "port": "clk",
+          "signals": [
+            "clk"
+          ]
+        },
+        {
+          "direction": "output",
+          "port": "busy",
+          "signals": [
+            "busy"
+          ]
+        }
+      ],
+      "module": "ctrl",
+      "name": "u_ctrl",
+      "status": "resolved"
+    }
+  ],
+  "module": "wrap",
+  "processes": {
+    "sequential": 1
+  },
+  "registers": [
+    {
+      "clock": {
+        "edge": "posedge",
+        "signal": "clk"
+      },
+      "enables": [
+        "go"
+      ],
+      "hold": "implicit",
+      "name": "q"
+    }
+  ]
+}

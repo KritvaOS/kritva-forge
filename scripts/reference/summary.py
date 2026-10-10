@@ -22,7 +22,8 @@ The summary contains:
 - gate statuses (read from the persisted reports);
 - Prompt v2 size, leakage and truncation statistics;
 - the classification counts;
-- split counts and identity.
+- split counts and identity;
+- the multi-task dataset counts and identity (KF-DQ-013).
 
 It holds no time, host or path data. ``--compare`` reports every differing key and exits 1 on any difference.
 ``--write`` is used only by ``make reference-baseline``; the regression never writes the baseline.
@@ -49,6 +50,7 @@ LAYERS = (
     "generated/prompt/v2",
     "analysis/reports",
     "datasets/pipeline",
+    "datasets/multitask/v2",
     "splits",
     "manifests",
 )
@@ -63,6 +65,7 @@ REPORTS = {
     "provenance": "analysis/reports/provenance_report.json",
     "split_leakage": "analysis/reports/split_leakage_report.json",
     "data_manifest": "analysis/reports/data_manifest_report.json",
+    "dataset_v2": "analysis/reports/dataset_v2_report.json",
 }
 
 
@@ -121,6 +124,10 @@ def build(data_root, manifest_path=None) -> dict:
         "classification": cls.get("counts"),
         "splits": {"counts": (dm.get("splits") or {}).get("counts"),
                    "split_identity": (dm.get("splits") or {}).get("split_identity")},
+        "multitask": {"records": (dm.get("multitask") or {}).get("records"),
+                      "splits": (dm.get("multitask") or {}).get("splits"),
+                      "tasks": {k: v.get("records") for k, v in ((dm.get("multitask") or {}).get("tasks") or {}).items()},
+                      "dataset_identity": (dm.get("multitask") or {}).get("dataset_identity")},
     }
 
 

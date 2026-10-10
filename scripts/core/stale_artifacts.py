@@ -119,7 +119,8 @@ HISTORICAL_FILES = (
     "manifests/reorder_manifest.json",
 )
 # Roots whose files cleanup may remove or quarantine.
-CLEANABLE_PREFIXES = ("generated/", "analysis/reports/", "datasets/pipeline/", "splits/", "manifests/", "golden/")
+CLEANABLE_PREFIXES = ("generated/", "analysis/reports/", "datasets/pipeline/", "datasets/multitask/", "splits/",
+                      "manifests/", "golden/")
 PLACEHOLDER = ".gitkeep"
 
 DATASET_SPLIT_FILES = ("train", "validation", "test")
@@ -132,6 +133,7 @@ PIPELINE_OUTPUT_KINDS = frozenset({
     "artifact_inventory", "stale_artifact_report", "data_manifest", "data_manifest_report",
     "semantic_ir_report", "behavior_report", "structural_report", "fsm_report",
     "prompt_v2", "prompt_v2_sidecar", "prompt_v2_report", "prompt_leakage_classification",   # KF-DQ-012
+    "multitask_split", "multitask_registry", "dataset_v2_report",                            # KF-DQ-013
 })
 _PROMPT_V2_RE = re.compile(r"^generated/prompt/v2/([^/]+)/([^/]+)\.([A-Za-z0-9_]+)\.(txt|json)$")
 _PROMPT_RE = re.compile(r"^generated/prompts/([^/]+)/([^/]+)\.generate\.txt$")
@@ -291,6 +293,12 @@ class Context:
             singles[f"datasets/pipeline/{name}.jsonl"] = "dataset_split"
         for name in DATASET_AUX_RECORD_FILES:
             singles[f"datasets/pipeline/{name}.jsonl"] = "dataset_records"
+        # KF-DQ-013 multi-task dataset
+        from scripts.multitask import registry as MG
+        for name in MG.SPLITS:
+            singles[f"{MG.OUTPUT_DIR}/{name}.jsonl"] = "multitask_split"
+        singles[MG.REGISTRY_PATH] = "multitask_registry"
+        singles[MG.REPORT_PATH] = "dataset_v2_report"
         for path, kind in singles.items():
             exp[path] = (kind, None, None)
         return exp
@@ -660,6 +668,9 @@ def classify(data_root, use_recorded: bool = True) -> dict:
         elif kind == "prompt_leakage_classification":
             state, reason = _classification_state(root, path)
             add(rel, kind, state, reason)
+        elif kind in ("multitask_split", "multitask_registry", "dataset_v2_report"):
+            state, reason = _multitask_state(ctx, root, rel, kind, counters)
+            add(rel, kind, state, reason)
         elif kind == "pipeline_stats":
             data = _load_json(path)
             ok = isinstance(data, dict) and data.get("ips") == len(ctx.ips) and data.get("modules") == len(ctx.modules)
@@ -693,6 +704,54 @@ def classify(data_root, use_recorded: bool = True) -> dict:
     entries.sort(key=lambda e: e["path"])
     return {"entries": entries, "missing": missing, "counters": counters, "expected": len(expected),
             "context": ctx}
+
+
+def _multitask_state(ctx, root: Path, rel: str, kind: str, counters) -> tuple[str, str | None]:
+    """KF-DQ-013: a multi-task split file is CURRENT when every record has the current dataset schema,
+    a canonical module and current source hashes; the registry when it equals the forge registry; the
+    report when it PASSed for exactly the current dataset files."""
+    from scripts.multitask import registry as MG
+    from scripts.multitask import validator as MV
+
+    path = root / rel
+    if kind == "multitask_split":
+        sha_cache = {}
+        for rec in _jsonl(path) or []:
+            counters["multitask_records_checked"] += 1
+            if not isinstance(rec, dict) or rec.get("schema") != MG.DATASET_SCHEMA:
+                counters["obsolete_schema"] += 1
+                return "STALE", "obsolete or unreadable dataset schema"
+            m = rec.get("module") or {}
+            if (m.get("ip"), m.get("name")) not in ctx.modules:
+                return "ORPHAN", f"record for non-canonical module {m.get('ip')}/{m.get('name')}"
+            for src in rec.get("sources", []):
+                sp = root / str(src.get("path"))
+                if src.get("path") not in sha_cache:
+                    sha_cache[src.get("path")] = _sha(sp) if sp.is_file() else None
+                if sha_cache[src.get("path")] != src.get("sha256"):
+                    return "STALE", f"derived from an older {src.get('layer')} revision ({src.get('path')})"
+        return "CURRENT", None
+    data = _load_json(path)
+    if kind == "multitask_registry":
+        if not isinstance(data, dict):
+            return "STALE", "unreadable"
+        strip = lambda d: {k: ([{x: y for x, y in t.items() if x != "records"} for t in v] if k == "tasks" else v)
+                           for k, v in d.items()}
+        if strip(data) != strip(MG.document()):
+            counters["obsolete_schema"] += 1
+            return "STALE", "task registry differs from the forge registry"
+        return "CURRENT", None
+    if not isinstance(data, dict) or data.get("status") != "PASS" or data.get("dataset_schema") != MG.DATASET_SCHEMA:
+        return "STALE", "obsolete or non-PASS dataset report"
+    lines = {}
+    for name in MG.SPLITS:
+        f = root / f"{MG.OUTPUT_DIR}/{name}.jsonl"
+        if not f.is_file():
+            return "STALE", "dataset files missing"
+        lines[name] = f.read_text(encoding="utf-8").splitlines(keepends=True)
+    if data.get("dataset_identity") != MV.dataset_identity(lines):
+        return "STALE", "report does not describe the current dataset"
+    return "CURRENT", None
 
 
 def _semantic_state(ctx, path: Path, ip, mod, counters) -> tuple[str, str | None]:
@@ -1087,6 +1146,7 @@ def build_report(result: dict, inventory_status: str | None, override: bool = Fa
         "symlinks": c["symlinks"],
         "dataset_records_checked": c["dataset_records_checked"],
         "split_records_checked": c["split_records_checked"],
+        "multitask_records_checked": c["multitask_records_checked"],
         "cleanup_candidates": sum(1 for p in plan if p["action"] in ("REMOVE", "QUARANTINE")),
         "remediation_counts": dict(sorted(Counter(p["action"] for p in plan).items())),
         "inventory_status": inventory_status or "not checked",
@@ -1142,7 +1202,8 @@ def format_report(report: dict) -> str:
             "unmanaged", "missing_expected", "duplicate_artifacts", "invalid_provenance",
             "invalid_source_identities", "invalid_module_identities", "missing_ir_references", "invalid_semantic_ir", "invalid_behavior",
             "invalid_structural", "invalid_fsm", "invalid_prompt_v2", "obsolete_schema", "absolute_paths", "symlinks", "dataset_records_checked",
-            "split_records_checked", "cleanup_candidates", "remediation_counts", "inventory_status"]
+            "split_records_checked", "multitask_records_checked", "cleanup_candidates", "remediation_counts",
+            "inventory_status"]
     lines = [f"Stale artifact check: {report['status']}" + (" (override)" if report.get("override") else "")]
     lines += [f"  {k.replace('_', ' '):26s}: {report.get(k)}" for k in rows if k in report]
     lines += [f"  [FAIL] {p}" for p in report["problems"][:30]]

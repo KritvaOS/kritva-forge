@@ -1,0 +1,76 @@
+{
+  "module": "ctrl",
+  "targets": [
+    {
+      "inputs": [
+        "clk",
+        "rst_n"
+      ],
+      "name": "busy",
+      "registers": [
+        "state"
+      ],
+      "role": "registered_output",
+      "sources": [
+        {
+          "kind": "clock",
+          "signal": "clk"
+        },
+        {
+          "kind": "reset",
+          "signal": "rst_n"
+        },
+        {
+          "kind": "data",
+          "signal": "state"
+        }
+      ]
+    },
+    {
+      "inputs": [],
+      "name": "done",
+      "registers": [
+        "state"
+      ],
+      "role": "output",
+      "sources": [
+        {
+          "kind": "data",
+          "signal": "state"
+        }
+      ]
+    },
+    {
+      "inputs": [
+        "clk",
+        "go",
+        "rst_n"
+      ],
+      "name": "state",
+      "registers": [],
+      "role": "register",
+      "sources": [
+        {
+          "kind": "clock",
+          "signal": "clk"
+        },
+        {
+          "kind": "enable",
+          "signal": "go"
+        },
+        {
+          "kind": "reset",
+          "signal": "rst_n"
+        },
+        {
+          "kind": "control",
+          "signal": "state"
+        },
+        {
+          "kind": "hold",
+          "signal": "state"
+        }
+      ]
+    }
+  ]
+}

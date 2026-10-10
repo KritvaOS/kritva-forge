@@ -191,7 +191,7 @@ def test_bypassed_prompt_gate_fails(tree, monkeypatch):
 # ----------------------------------------------------------------------------- manifest v6 (AC-780 .. AC-782)
 def test_manifest_v6_references_prompt_v2(built):
     m = json.loads((built.root / DM.MANIFEST_PATH).read_text())
-    assert m["schema"]["version"] == 6 and m["compatibility"]["required"] == C.REQUIRED
+    assert m["schema"]["version"] == 7 and m["compatibility"]["required"] == C.REQUIRED
     arts = {a["path"]: a for a in m["artifacts"]}
     for mod in m["modules"]:
         pv = mod["prompt_v2"]

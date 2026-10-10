@@ -291,6 +291,10 @@ def test_committed_summary_is_consistent(committed):
     assert set(s["gates"].values()) == {"PASS"}
     assert s["prompt_v2"]["prompts"] == s["prompt_v2"]["sidecars"] == 149
     assert s["prompt_v2"]["leakage"]["failures"] == 0
+    # KF-DQ-013 AC-062: 6 populated tasks x 149 modules, module splits 114 / 19 / 16 inherited
+    assert s["multitask"]["records"] == 894
+    assert s["multitask"]["splits"] == {"train": 684, "validation": 114, "test": 96}
+    assert s["gates"]["dataset_v2"] == "PASS"
 
 
 def test_materialize_committed_corpus(tmp_path, committed):

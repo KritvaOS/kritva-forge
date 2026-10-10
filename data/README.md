@@ -42,6 +42,21 @@ schema 1 must be regenerated with `make pipeline`.
 The public repository must not contain proprietary RTL, private datasets,
 generated golden corpora, model checkpoints, or restricted training data.
 
+## Multi-task dataset (KF-DQ-013)
+
+`datasets/multitask/v2/` holds the multi-task hardware-intelligence dataset:
+- schema `kritva-forge-dataset` v2;
+- task registry `registry.json`;
+- one `train` / `validation` / `test` JSON-lines file each.
+
+It has six populated tasks: `rtl_generation` v2 (Prompt v2 → RTL), `rtl_understanding`,
+`interface_extraction`, `structural_extraction`, `dependency_analysis` and `fsm_extraction`. Four more
+tasks are declared without records. Every record keeps its module's split.
+
+It is rebuilt by `make pipeline`, or by `make multitask` on an existing data root, and validated by
+`make check-multitask`. The legacy `datasets/pipeline/` (Prompt v1 `rtl_generation`) is unchanged and
+coexists with it. See `docs/architecture/architecture.md` §11.6.
+
 ## Open-source reference corpus (KF-DQ-012.2)
 
 For a local regression without the private repository, `reference/` pins five

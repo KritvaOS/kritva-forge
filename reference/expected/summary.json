@@ -9,6 +9,7 @@
     "behavior": "PASS",
     "compatibility": "PASS",
     "data_manifest": "PASS",
+    "dataset_v2": "PASS",
     "fsm": "PASS",
     "prompt_v2": "PASS",
     "provenance": "PASS",
@@ -26,8 +27,12 @@
   },
   "layers": {
     "analysis/reports": {
-      "files": 12,
-      "tree_sha256": "232b27467f591978c793e364653e4a1502e4144e466096b17205dfc675c90ff3"
+      "files": 13,
+      "tree_sha256": "bc0b5f30214fd7121a0f6225af4a81aad83599594553ab1f294054bba46681a0"
+    },
+    "datasets/multitask/v2": {
+      "files": 4,
+      "tree_sha256": "e5575168b5721c7c05fb51fb776ef685257c52ae3b5b16a2319f4f3eb0c291ac"
     },
     "datasets/pipeline": {
       "files": 8,
@@ -43,7 +48,7 @@
     },
     "manifests": {
       "files": 3,
-      "tree_sha256": "7986690afe846cc4e709641e6ddd48357fac5eb2f9a6ee58161f0c8cecb62553"
+      "tree_sha256": "a44fe6e44ce42cdd2fe60ad5e27cade28e28e87d130acaa7ca6343b27c104c30"
     },
     "normalized/behavior/v1": {
       "files": 149,
@@ -75,6 +80,27 @@
     }
   },
   "modules": 149,
+  "multitask": {
+    "dataset_identity": "ds2:a97936cc00aca8f8",
+    "records": 894,
+    "splits": {
+      "test": 96,
+      "train": 684,
+      "validation": 114
+    },
+    "tasks": {
+      "assertion_generation": 0,
+      "dependency_analysis": 149,
+      "fsm_extraction": 149,
+      "interface_extraction": 149,
+      "rtl_explanation": 0,
+      "rtl_generation": 149,
+      "rtl_optimization": 0,
+      "rtl_repair": 0,
+      "rtl_understanding": 149,
+      "structural_extraction": 149
+    }
+  },
   "prompt_v2": {
     "corpus_sha256": "9b4558843198c5a318a112edd471b8204e4c469c7b4e901bdea50a7e77718e96",
     "guard_fallbacks": 156,

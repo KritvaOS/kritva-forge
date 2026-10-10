@@ -1,0 +1,84 @@
+{
+  "fsms": [
+    {
+      "clock": {
+        "edge": "posedge",
+        "signal": "clk"
+      },
+      "encoding": {
+        "style": "binary",
+        "width": 2
+      },
+      "outputs": [
+        {
+          "kind": "moore",
+          "name": "busy",
+          "registered": true
+        },
+        {
+          "kind": "moore",
+          "name": "done",
+          "registered": false
+        }
+      ],
+      "quality": "high",
+      "reset": {
+        "kind": "async",
+        "signal": "rst_n",
+        "state": "IDLE"
+      },
+      "state_register": "state",
+      "states": [
+        {
+          "name": "IDLE",
+          "reset": true,
+          "value": 0
+        },
+        {
+          "name": "RUN",
+          "reset": false,
+          "value": 1
+        },
+        {
+          "name": "STOP",
+          "reset": false,
+          "value": 2
+        }
+      ],
+      "status": "confirmed",
+      "style": "one_process",
+      "transitions": [
+        {
+          "condition": "go is 1",
+          "from": "IDLE",
+          "kind": "explicit",
+          "status": "confirmed",
+          "to": "RUN"
+        },
+        {
+          "condition": null,
+          "from": "RUN",
+          "kind": "explicit",
+          "status": "confirmed",
+          "to": "STOP"
+        },
+        {
+          "condition": null,
+          "from": "STOP",
+          "kind": "explicit",
+          "status": "confirmed",
+          "to": "IDLE"
+        },
+        {
+          "condition": "go is 0",
+          "from": "IDLE",
+          "kind": "implicit_hold",
+          "status": "confirmed",
+          "to": "IDLE"
+        }
+      ],
+      "width": 2
+    }
+  ],
+  "module": "ctrl"
+}

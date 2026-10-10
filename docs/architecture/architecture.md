@@ -1866,6 +1866,113 @@ The corpus exposed the Prompt v2 select-name defect fixed in KF-DQ-012.1.
 
 ---
 
+## 11.6 Multi-Task Dataset (KF-DQ-013)
+
+`datasets/multitask/v2/` is a versioned hardware-intelligence dataset with these properties:
+- schema `kritva-forge-dataset` v2;
+- the task type of every record is explicit and versioned;
+- every target is a deterministic view of persisted canonical artifacts (`scripts/multitask/`);
+- no new analysis semantics, no RTL fact parsing, no LLM.
+
+It coexists with the legacy Prompt v1 `rtl_generation` dataset `datasets/pipeline/`, which stays unchanged.
+
+**Task registry** (`scripts/multitask/registry.py`, `task_registry` v1; serialized to
+`datasets/multitask/v2/registry.json` with record counts). Each task has its own version. A
+*populated* task has exactly one record per canonical module; a *declared* task has none.
+
+| Task | Version | Status | Input | Target |
+|---|---|---|---|---|
+| `rtl_generation` | 2 | populated | Prompt v2 text | module RTL (`rtl-slice-v1`) |
+| `rtl_understanding` | 1 | populated | module RTL | Prompt v2 text |
+| `interface_extraction` | 1 | populated | module RTL | `interface-v1` JSON |
+| `structural_extraction` | 1 | populated | module RTL | `structural-v1` JSON |
+| `dependency_analysis` | 1 | populated | module RTL | `dependency-v1` JSON |
+| `fsm_extraction` | 1 | populated | module RTL | `fsm-v1` JSON |
+| `rtl_explanation`, `assertion_generation`, `rtl_repair`, `rtl_optimization` | 1 | declared | — | — |
+
+`rtl_explanation` is not an alias of Prompt v2; its human-oriented target contract comes later.
+A change of a task's input, target, projection or population rule needs a new task version; a
+change of the task set needs a new registry version (the tests pin the registry digest).
+
+**Record** — the fields are exact, including nested fields:
+- `schema`;
+- `record_id`: `r2:` + 16 hex of SHA-256 over `kf-record␟v2␟task␟version␟module_id`;
+- `task {id, version}`;
+- `module {ip, name, module_id}`;
+- `split`;
+- `input {kind, text}`;
+- `target {kind, text}` or `{kind: json, projection, value}`;
+- `sources [{layer, path, sha256}]`;
+- flat `versions`.
+
+Each split file is canonical JSON lines sorted by (task, ip, module). Records contain no ids,
+locations, absolute paths or timestamps.
+
+**`rtl-slice-v1`** is the canonical source text of exactly one module declaration, from
+`module` / `macromodule` *name* to the next `endmodule`:
+- it is located lexically, with comments and strings masked for matching only;
+- the only normalization is CRLF / CR → LF;
+- zero or several matches fail.
+
+It is syntactic slicing, not analysis. Other modules of the same file are never included.
+
+**Projections.** Each projection emits only its allowed fields, with names resolved through the
+Prompt v2 name map:
+
+| Projection | Layer | Content |
+|---|---|---|
+| `interface-v1` | Semantic IR v2 | `{module, parameters, ports}`. Module-scope `parameter`s and ports in declaration order. Dimension and default text are canonical Semantic IR text, the only HDL text a projection permits. |
+| `structural-v1` | Structural v1 | `{module, registers, instances, processes, counts}`. Registers carry clock, enable signals and hold. Instances carry connections. Processes are counted per boundary. |
+| `dependency-v1` | Structural v1 | `{module, targets}` for every output port and register (role `output` / `register` / `registered_output`). `inputs` = module inputs in the persisted fan-in cone; `registers` = registers in it; `sources` = direct dependencies with their persisted kind. Nothing is recomputed. |
+| `fsm-v1` | FSM v2 | `{module, fsms}`: confirmed and candidate FSMs, each with state register, width, status, quality, style, encoding, clock, reset, states, non-reset transitions (natural-language condition from the Prompt v2 guard renderer, persisted kind / status) and outputs. Actions, couplings, evidence, reachability and unknowns are excluded (later `fsm-v2`). `fsms: []` is a valid negative example; a missing FSM document fails. |
+
+Empty collections are explicit. Nulls and unresolved names are counted in the report.
+
+**Split and leakage boundary.** Every record inherits its module's split from the split schema v2
+manifest; the split algorithm is never re-run on task records. All tasks of a module are therefore
+in one split, and the gate fails a module whose records span splits or differ from the manifest.
+
+Similarity between a record's own input and target is intended and not gated; split isolation of
+the module is the leakage boundary.
+
+The build and the gate require all of the following for the current data:
+- split schema 2;
+- a passing split gate;
+- the entry authorization `kf_dq_013_entry` = `open`, recomputed from the classification.
+
+The authorization is not a task lifecycle state. The two retained `structural_similarity` groups
+were reviewed (KF-DQ-012 AC-500) and stay soft; the dataset report lists them.
+
+**Gate** (`make check-multitask`, part of `data-quality`; run by the pipeline after the final
+Prompt v2 gate). It checks:
+- schema, registry, keys and canonical form;
+- record identity and order;
+- per-task coverage;
+- split inheritance;
+- task provenance consistency (sources, projections, versions);
+- id / location / path leaks;
+- byte equality with a re-derivation from the persisted artifacts.
+
+It writes `analysis/reports/dataset_v2_report.json`, which holds:
+- counts and size statistics;
+- FSM positives / negatives;
+- nulls;
+- soft findings;
+- the dataset identity `ds2:`.
+
+Files are replaced only after the whole dataset was built.
+
+**Integration.**
+- The Prompt v2 consumption gate allows Prompt v2 only in `datasets/multitask/v2` `rtl_generation`
+  v2 / `rtl_understanding` v1 records, while the entry authorization holds. A legacy record that
+  consumes Prompt v2 fails.
+- The stale gate manages `multitask_split` / `multitask_registry` / `dataset_v2_report`.
+- Manifest v7 adds the `multitask` section.
+- `REQUIRED` adds `dataset_schema` 2 / `task_registry` 1 as manifest-only keys. `CONTRACT_VERSION`
+  stays 1 because the mechanism is unchanged.
+- The reference regression adds the `datasets/multitask/v2` layer and counts (894 records:
+  684 / 114 / 96).
+
 # 12. Private Data Repository
 
 The public repository should not contain private RTL.

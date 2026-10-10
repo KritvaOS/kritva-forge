@@ -146,7 +146,7 @@ def test_stale_behavior_blocks_publication(tree, monkeypatch):
 
 def test_manifest_references_behavior(built):
     m = json.loads((built.root / DM.MANIFEST_PATH).read_text())
-    assert m["schema"] == {"name": "kritva-forge-data-manifest", "version": 6}
+    assert m["schema"] == {"name": "kritva-forge-data-manifest", "version": 7}
     assert (m["versions"]["behavior"], m["versions"]["behavior_identity"]) == (1, 1)
     arts = {a["path"]: a for a in m["artifacts"]}
     for mod in m["modules"]:
