@@ -30,6 +30,7 @@ import pytest
 
 from scripts.core.paths import ForgeDataPaths
 from scripts.dataset import leakage as L
+from tests.data.corpus_kind import private_corpus_only
 
 ROOT = Path(__file__).resolve().parents[2]
 
@@ -95,7 +96,7 @@ def _real_identities(module, source=SOURCE, spec=None, completion=None):
 
 
 def test_leakage_identities_are_versioned_and_deterministic():
-    assert L.LEAKAGE_SCHEMA_VERSION == 1 and L.SPLIT_SCHEMA_VERSION == 1
+    assert L.LEAKAGE_SCHEMA_VERSION == 1 and L.SPLIT_SCHEMA_VERSION == 2
     first, second = _real_identities("a"), _real_identities("a")
     assert first == second
     for kind in L.HARD_IDENTITIES:
@@ -358,3 +359,19 @@ def test_data_repository_split_has_no_leakage():
     assert manifest_path.exists(), "split manifest missing"
     report = L.check_leakage(L.load_split_identities(DATA_ROOT), json.loads(manifest_path.read_text()))
     assert report["status"] == "PASS", L.format_report(report)
+
+
+@pytest.mark.skipif(not DATA_ROOT, reason="KRITVA_FORGE_DATA_ROOT not set")
+@private_corpus_only
+def test_data_repository_split_schema_v2_counts():
+    """KF-DQ-013.0 AC-031: split schema v2 on the private corpus (248 / 51 / 51, no cross-split near-duplicate)."""
+    from scripts.core.paths import ForgeDataPaths
+
+    data = ForgeDataPaths.from_root(DATA_ROOT)
+    manifest = json.loads((data.splits / "split_manifest.json").read_text())
+    assert manifest["split_schema_version"] == 2
+    assert manifest["counts"] == {"train": 248, "validation": 51, "test": 51}
+    report = json.loads((data.reports / "split_leakage_report.json").read_text())
+    assert report["near_duplicate"]["cross_split_edges"] == 0
+    cls = json.loads((data.reports / "prompt_leakage_classification.json").read_text())
+    assert cls["counts"]["near_duplicate"] == 0 and cls["kf_dq_013_entry"] == "open"

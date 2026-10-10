@@ -1148,7 +1148,9 @@ documents, never from reports:
   | `informational` | < 0.30 | does not block |
 
 - **KF-DQ-012 changes no split** (`splits_changed: false`). Prompt content
-  and dataset task labels are not used for classification.
+  and dataset task labels are not used for classification.  Split schema v2
+  (KF-DQ-013.0, §11.1) groups every near-duplicate pair before the split is
+  assigned, so the classification reports no `near_duplicate` group.
 - Output: `analysis/reports/prompt_leakage_classification.json`. It is STALE
   when the split manifest or fingerprints change.
 
@@ -1506,11 +1508,41 @@ library code and are assigned to `train`; each IP's remaining records form
 one atomic unit, placed largest first into the split furthest below its
 target (70 / 15 / 15).
 
+**Split schema v2 (`SPLIT_SCHEMA_VERSION = 2`, KF-DQ-013.0).**  The
+`rtl-sim-v1` near-duplicate pairs are grouping edges too
+(`scripts/dataset/near_duplicate.py`):
+
+- Candidates are every pair of canonical modules sharing a Structural
+  Analysis fingerprint or an FSM per-FSM shape fingerprint.  They are
+  computed over the whole corpus before and independent of the split.
+- A pair with similarity ≥ 0.70 (§5.6, the same single implementation as the
+  KF-DQ-012 classification) joins every record of both modules into one
+  group.  This applies to same-IP and cross-IP pairs alike.
+- A resulting multi-IP group is a shared-library group (`train`).
+- `structural_similarity` stays soft.
+- There are no pins and no IP-family tables.
+- Without edges, v2 reproduces the v1 assignment exactly.
+- Missing documents or sources, or a source sha256 mismatch, fail closed.
+
+The manifest records the edge document (`near_duplicate`: classifier,
+tokenizer, threshold, sources, candidate count, sorted `{a, b, similarity}`
+edges) and, per group, `joined_by` (`hard`, `body_shape`, `near_duplicate`).
+
 The assignment is written to `splits/split_manifest.json` and the gate
 report to `analysis/reports/split_leakage_report.json`.  Dataset generation
-fails if any hard group crosses splits, a record is duplicated, or the
-manifest disagrees with the dataset files.  `make check-leakage` re-runs the
-gate against an existing data checkout.
+fails if any of the following holds:
+- a hard group crosses splits;
+- a record is duplicated;
+- the manifest disagrees with the dataset files;
+- the manifest's edge list differs from the edges recomputed from the data
+  root;
+- any near-duplicate edge spans two splits;
+- the assignment is not reproducible from the identities and edges;
+- the split schema is not 2.
+
+`make check-leakage` re-runs the gate against an existing data checkout.
+After KF-DQ-013.0 the KF-DQ-012 classification has no `near_duplicate`
+group and `kf_dq_013_entry` is `open`.
 
 
 ## 11.2 RTL Provenance

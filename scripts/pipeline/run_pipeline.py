@@ -677,6 +677,7 @@ def run_pipeline(
             curated_root=curated_root,
             splits_root=splits_root,
             reports_root=reports_root,
+            data_root=data_root,
         )
 
         #
