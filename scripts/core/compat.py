@@ -25,6 +25,12 @@ this forge revision requires; every layer's own constants must agree with it
 actually records: the canonical data manifest schema version, its ``versions`` block and the
 ``versions`` block of every Prompt v2 sidecar.  Any mismatch fails closed
 (``make check-compat``; part of ``data-quality`` and the apply workflow).
+
+``CONTRACT_VERSION`` versions the contract mechanism (one ``REQUIRED`` table,
+the ``required`` block recorded in the manifest compared for exact equality,
+sidecar keys); additive requirements are carried by ``REQUIRED`` itself.
+KF-DQ-013 added ``dataset_schema`` / ``task_registry`` (manifest-only keys,
+``MANIFEST_ONLY_KEYS``) and manifest version 7 without changing the mechanism.
 """
 
 from __future__ import annotations
@@ -40,7 +46,7 @@ REPORT_PATH = "analysis/reports/compatibility_report.json"
 
 # The one canonical declaration of required versions (AC-511 .. AC-517).
 REQUIRED = {
-    "manifest": 6,
+    "manifest": 7,
     "semantic_ir": 2,
     "semantic_identity": 1,
     "behavior": 1,
@@ -58,9 +64,13 @@ REQUIRED = {
     "leakage_metric": "leakage-v1",
     "leakage_thresholds": "thresholds-v1",
     "leakage_classifier": "rtl-sim-v1",
+    "dataset_schema": 2,                    # KF-DQ-013 multi-task dataset (datasets/multitask/v2)
+    "task_registry": 1,
 }
-# Keys a Prompt v2 sidecar records (it does not record the manifest / classifier).
-SIDECAR_KEYS = tuple(k for k in REQUIRED if k not in ("manifest", "leakage_classifier"))
+# Manifest-only keys: a Prompt v2 sidecar records none of them (KF-DQ-013 AC-052).
+MANIFEST_ONLY_KEYS = ("manifest", "leakage_classifier", "dataset_schema", "task_registry")
+# Keys a Prompt v2 sidecar records.
+SIDECAR_KEYS = tuple(k for k in REQUIRED if k not in MANIFEST_ONLY_KEYS)
 
 
 def declared() -> dict:
@@ -73,6 +83,7 @@ def declared() -> dict:
     from scripts.prompt_v2 import model as PM
     from scripts.semantic_ir import model as SM
     from scripts.structural import model as TM
+    from scripts.multitask import registry as MG
 
     return {
         "manifest": DM.MANIFEST_VERSION,
@@ -84,6 +95,7 @@ def declared() -> dict:
         "prompt": PM.SCHEMA_VERSION, "prompt_generator": PM.GENERATOR_VERSION, "prompt_identity": PM.IDENTITY_VERSION,
         "tokenizer": PL.TOKENIZER_VERSION, "leakage_metric": PL.METRIC_VERSION,
         "leakage_thresholds": PL.THRESHOLD_VERSION, "leakage_classifier": PC.CLASSIFIER_VERSION,
+        "dataset_schema": MG.DATASET_SCHEMA["version"], "task_registry": MG.TASK_REGISTRY_VERSION,
     }
 
 

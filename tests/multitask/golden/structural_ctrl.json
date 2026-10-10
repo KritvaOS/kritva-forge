@@ -1,0 +1,36 @@
+{
+  "counts": {
+    "dependencies": 9,
+    "instances": 0,
+    "processes": 2,
+    "registers": 2,
+    "signals": 6
+  },
+  "instances": [],
+  "module": "ctrl",
+  "processes": {
+    "sequential": 2
+  },
+  "registers": [
+    {
+      "clock": {
+        "edge": "posedge",
+        "signal": "clk"
+      },
+      "enables": [],
+      "hold": "none",
+      "name": "busy"
+    },
+    {
+      "clock": {
+        "edge": "posedge",
+        "signal": "clk"
+      },
+      "enables": [
+        "go"
+      ],
+      "hold": "implicit",
+      "name": "state"
+    }
+  ]
+}

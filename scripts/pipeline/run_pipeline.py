@@ -502,6 +502,31 @@ def prompt_v2_gate(data_root, final=False):
     return report
 
 
+def multitask_gate(data_root):
+    """Build the multi-task dataset and run its gate (KF-DQ-013; no override).
+
+    The dataset is derived from the persisted artifacts after the split and the
+    final Prompt v2 gate; the gate re-derives it byte-for-byte, checks split
+    inheritance, task provenance and the entry authorization, and writes
+    ``analysis/reports/dataset_v2_report.json``.
+    """
+    from scripts.multitask import build as MB
+    from scripts.multitask import validator as MV
+
+    try:
+        result = MB.write(data_root)
+    except MB.BuildError as exc:
+        raise RuntimeError(f"multi-task dataset build failed (KF-DQ-013): {exc}") from exc
+    report = MV.check(data_root)
+    if report["status"] == "PASS":
+        MV.write_report(data_root, report)
+    print("[INFO] Multi-task dataset gate")
+    print(MV.format_report(report))
+    if report["status"] != "PASS":
+        raise RuntimeError("multi-task dataset gate failed (KF-DQ-013): " + "; ".join(report["problems"][:5]))
+    return result
+
+
 def compat_gate(data_root):
     """Cross-repository version compatibility (KF-DQ-012 AC-508 .. AC-531); writes its report."""
     from scripts.core import compat as C
@@ -700,6 +725,12 @@ def run_pipeline(
         prompt_v2_gate(data_root, final=True)
 
         #
+        # KF-DQ-013: multi-task dataset (split inherited per module from the
+        # split schema v2 manifest) and its gate.
+        #
+        multitask_gate(data_root)
+
+        #
         # KF-DQ-005: canonical RTL provenance manifest + validation.
         #
         provenance_report = write_provenance(data_root)
@@ -734,6 +765,7 @@ def run_pipeline(
          os.path.join(os.path.dirname(normalized_root), "fsm"),
          os.path.join(data_root, "generated", "prompt"),
          prompt_root, reports_root, datasets_root, splits_root,
+         os.path.join(data_root, "datasets", "multitask"),
          str(ForgeDataPaths.from_root(data_root).manifests)]
     )
     print("[INFO] Portable provenance OK (no absolute host paths)")

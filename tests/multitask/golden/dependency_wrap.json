@@ -1,0 +1,47 @@
+{
+  "module": "wrap",
+  "targets": [
+    {
+      "inputs": [],
+      "name": "busy",
+      "registers": [],
+      "role": "output",
+      "sources": []
+    },
+    {
+      "inputs": [],
+      "name": "done",
+      "registers": [],
+      "role": "output",
+      "sources": []
+    },
+    {
+      "inputs": [
+        "clk",
+        "din",
+        "go"
+      ],
+      "name": "q",
+      "registers": [],
+      "role": "registered_output",
+      "sources": [
+        {
+          "kind": "clock",
+          "signal": "clk"
+        },
+        {
+          "kind": "data",
+          "signal": "din"
+        },
+        {
+          "kind": "enable",
+          "signal": "go"
+        },
+        {
+          "kind": "hold",
+          "signal": "q"
+        }
+      ]
+    }
+  ]
+}

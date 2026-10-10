@@ -28,7 +28,7 @@ DATASET_DIR ?= $(DATA_ROOT)/datasets/pipeline
 CURATED_DIR ?=
 PROJECT ?= $(NORMALIZED_DIR)
 
-.PHONY: help venv setup test test-data check-layout check-leakage check-provenance check-stale clean-stale check-manifest check-semantic check-behavior behavior check-structural structural check-fsm fsm prompt-v2 check-prompt-v2 check-compat data-quality compile pipeline headers git_sync clean reference-init reference-data reference-regression reference-baseline reference-clean
+.PHONY: help venv setup test test-data check-layout check-leakage check-provenance check-stale clean-stale check-manifest check-semantic check-behavior behavior check-structural structural check-fsm fsm prompt-v2 check-prompt-v2 check-compat multitask check-multitask data-quality compile pipeline headers git_sync clean reference-init reference-data reference-regression reference-baseline reference-clean
 
 help:
 	@echo "Kritva Forge targets:"
@@ -51,7 +51,9 @@ help:
 	@echo "  make prompt-v2       - regenerate Prompt v2 (generated/prompt/v2) from the four analysis layers"
 	@echo "  make check-prompt-v2 - validate Prompt v2 (provenance, abstraction, leakage, size, classification, reports)"
 	@echo "  make check-compat    - cross-repository version compatibility (forge requirements vs data versions)"
-	@echo "  make data-quality - test-data + layout + leakage + provenance + semantic + behavior + structural + fsm + prompt-v2 + stale + manifest + compat gates"
+	@echo "  make multitask       - build the multi-task dataset datasets/multitask/v2 (KF-DQ-013)"
+	@echo "  make check-multitask - validate the multi-task dataset (schema, registry, split inheritance, re-derivation)"
+	@echo "  make data-quality - test-data + layout + leakage + provenance + semantic + behavior + structural + fsm + prompt-v2 + multitask + stale + manifest + compat gates"
 	@echo "  make compile     - syntax-check Python sources"
 	@echo "  make headers     - validate KritvaOS source headers"
 	@echo "  make pipeline    - parse RTL and generate normalized IR/datasets"
@@ -139,7 +141,13 @@ check-prompt-v2: setup
 check-compat: setup
 	PYTHONPATH=. $(PYTHON) scripts/core/compat.py --data-root "$(DATA_ROOT)"
 
-data-quality: test-data check-layout check-leakage check-provenance check-semantic check-behavior check-structural check-fsm check-prompt-v2 check-stale check-manifest check-compat
+multitask: setup
+	PYTHONPATH=. $(PYTHON) scripts/multitask/build.py --data-root "$(DATA_ROOT)"
+
+check-multitask: setup
+	PYTHONPATH=. $(PYTHON) scripts/multitask/validator.py --check --data-root "$(DATA_ROOT)"
+
+data-quality: test-data check-layout check-leakage check-provenance check-semantic check-behavior check-structural check-fsm check-prompt-v2 check-multitask check-stale check-manifest check-compat
 
 headers:
 	python3 scripts/lint/check_source_headers.py --mode tracked --strict
